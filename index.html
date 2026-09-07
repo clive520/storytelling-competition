@@ -279,6 +279,7 @@ Different traditions can teach us about each other, and understanding can bring 
                 this.speed = 0.7;
                 this.onSentenceChange = null;
                 this.onEnd = null;
+                this.session = 0;
                 this.loadVoices();
             }
             loadVoices() {
@@ -320,6 +321,7 @@ Different traditions can teach us about each other, and understanding can bring 
                 this.speakNext();
             }
             speakNext() {
+                const mySession = this.session;
                 if (this.currentSentenceIndex >= this.sentences.length) {
                     const cb = this.onEnd;
                     this.isPlaying = false;
@@ -327,7 +329,8 @@ Different traditions can teach us about each other, and understanding can bring 
                     if (cb) cb();
                     return;
                 }
-                const sentence = this.sentences[this.currentSentenceIndex].trim();
+                const myIndex = this.currentSentenceIndex;
+                const sentence = this.sentences[myIndex].trim();
                 if (!sentence) {
                     this.currentSentenceIndex++;
                     this.speakNext();
@@ -341,15 +344,19 @@ Different traditions can teach us about each other, and understanding can bring 
                 const voice = this.getVoice(this.currentStudent.gender);
                 if (voice) this.currentUtterance.voice = voice;
                 this.currentUtterance.onstart = () => {
-                    if (this.onSentenceChange) this.onSentenceChange(this.currentSentenceIndex, 'playing');
+                    if (mySession !== this.session) return;
+                    if (this.onSentenceChange) this.onSentenceChange(myIndex, 'playing');
                 };
                 this.currentUtterance.onend = () => {
-                    if (this.onSentenceChange) this.onSentenceChange(this.currentSentenceIndex, 'spoken');
-                    this.currentSentenceIndex++;
+                    if (mySession !== this.session) return;
+                    if (this.onSentenceChange) this.onSentenceChange(myIndex, 'spoken');
+                    if (this.currentSentenceIndex === myIndex) this.currentSentenceIndex++;
                     if (this.isPlaying && !this.isPaused) this.speakNext();
                 };
-                this.currentUtterance.onerror = () => {
-                    this.currentSentenceIndex++;
+                this.currentUtterance.onerror = (e) => {
+                    if (mySession !== this.session) return;
+                    if (e && (e.error === 'canceled' || e.error === 'interrupted')) return;
+                    if (this.currentSentenceIndex === myIndex) this.currentSentenceIndex++;
                     if (this.isPlaying) this.speakNext();
                 };
                 this.synth.speak(this.currentUtterance);
@@ -366,9 +373,10 @@ Different traditions can teach us about each other, and understanding can bring 
                 return this.isPaused;
             }
             stop(silent) {
-                this.synth.cancel();
+                this.session++;
                 this.isPlaying = false;
                 this.isPaused = false;
+                this.synth.cancel();
                 this.currentUtterance = null;
                 if (!silent && this.onSentenceChange) this.onSentenceChange(this.currentSentenceIndex, 'reset');
             }
