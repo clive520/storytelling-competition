@@ -103,6 +103,43 @@
         }
         .sentence.spoken .zh { color: #bdc3c7; }
 
+        /* 錄音跟讀 */
+        .rec-btn {
+            display: inline-flex; align-items: center; gap: 4px;
+            margin-top: 6px; padding: 5px 12px; border: none; border-radius: 20px;
+            background: #eef1f4; color: #5d6d7e;
+            font-size: 0.82rem; font-weight: 600; cursor: pointer;
+            transition: all 0.2s;
+        }
+        .rec-btn:hover { background: #e0e6eb; }
+        .rec-btn.recording {
+            background: #ff5b5b; color: white;
+            animation: recpulse 1s infinite;
+        }
+        .rec-btn:disabled { opacity: 0.6; cursor: wait; }
+        @keyframes recpulse {
+            0% { box-shadow: 0 0 0 0 rgba(255,91,91,0.5); }
+            70% { box-shadow: 0 0 0 8px rgba(255,91,91,0); }
+            100% { box-shadow: 0 0 0 0 rgba(255,91,91,0); }
+        }
+        .rec-feedback {
+            margin-top: 8px; padding: 12px; border-radius: 10px;
+            background: #f8fafc; border: 1px solid #e4e8eb;
+            font-size: 0.92rem; cursor: default;
+        }
+        .rec-score { font-size: 1.1rem; font-weight: 700; margin-bottom: 6px; }
+        .rec-score.good { color: #27ae60; }
+        .rec-score.ok { color: #e67e22; }
+        .rec-score.low { color: #e74c3c; }
+        .rec-heard { color: #5d6d7e; margin-bottom: 6px; }
+        .rec-words { line-height: 2; margin-bottom: 8px; }
+        .rec-words .w-ok { background: #d4f5dd; color: #1e7e34; border-radius: 4px; padding: 2px 4px; }
+        .rec-words .w-miss { background: #ffd9d9; color: #c0392b; border-radius: 4px; padding: 2px 4px; }
+        .rec-words .w-skip { color: #95a5a6; padding: 2px 4px; }
+        .rec-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .rec-actions audio { height: 32px; max-width: 220px; }
+        .rec-tip { font-size: 0.82rem; color: #95a5a6; margin-top: 6px; }
+
         /* 底部常駐播放列 */
         .player-bar {
             position: fixed; left: 0; right: 0; bottom: 0; z-index: 100;
@@ -533,11 +570,13 @@
             const student = activeStudent();
             activeSentences = student.lines.map(l => l.en);
             const sentenceHtml = student.lines.map((l, i) =>
-                `<span class="sentence" data-index="${i}" onclick="playFromSentence(${i})">` +
+                `<div class="sentence" data-index="${i}" onclick="playFromSentence(${i})">` +
                 `<span class="en">${escapeHtml(l.en)}</span>` +
                 (viewMode === 'bi' ? `<span class="zh">${escapeHtml(l.zh)}</span>` : '') +
-                `</span>`
-            ).join(' ');
+                `<br><button class="rec-btn" id="rec-btn-${i}" onclick="event.stopPropagation(); toggleRecord(${i})">錄音跟讀</button>` +
+                `<div class="rec-feedback" id="rec-fb-${i}" hidden onclick="event.stopPropagation()"></div>` +
+                `</div>`
+            ).join('');
             storyWrap.innerHTML =
                 `<article class="story-card" id="story-${student.id}">` +
                     `<div class="story-header">` +
@@ -546,7 +585,7 @@
                         `<span>${student.gender === 'female' ? '女生 · 女聲' : '男生 · 男聲'} · 共 ${student.lines.length} 句</span></div>` +
                     `</div>` +
                     `<h2 class="story-title">${escapeHtml(student.title)}</h2>` +
-                    `<p class="hint">提示：點任一句可從該句開始朗讀；播放中會自動捲到目前句子。</p>` +
+                    `<p class="hint">提示：點任一句可從該句開始朗讀；每句後的「錄音跟讀」可錄下你的聲音並由電腦評分（建議使用電腦版 Chrome / Edge＋麥克風）。</p>` +
                     `<div class="story-text">${sentenceHtml}</div>` +
                 `</article>`;
             resetPlayerUI();
@@ -554,6 +593,7 @@
 
         function switchTab(studentId) {
             if (studentId === activeStudentId && activeSentences.length > 0) return;
+            stopRecording(true);
             tts.stop(true);
             activeStudentId = studentId;
             renderTabs();
@@ -565,6 +605,7 @@
             viewMode = mode;
             modeEnBtn.classList.toggle('active', mode === 'en');
             modeBiBtn.classList.toggle('active', mode === 'bi');
+            stopRecording(true);
             const wasPlaying = tts.isPlaying;
             const idx = tts.currentSentenceIndex;
             renderActiveStory();
@@ -581,6 +622,7 @@
         }
 
         function startPlay(fromIndex) {
+            stopRecording(true);
             const student = activeStudent();
             tts.onSentenceChange = updateSentenceUI;
             tts.onEnd = onPlayEnd;
@@ -635,6 +677,226 @@
             const total = els.length || 1;
             playerProgressFill.style.width = Math.min(((index + done) / total) * 100, 100) + '%';
             playerCount.textContent = `第 ${Math.min(index + 1, total)} / ${total} 句`;
+        }
+
+        // ---------- 錄音跟讀 ＋ 電腦評分 ----------
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let rec = { active: false, index: -1, sid: 0, recognition: null, stream: null, mediaRecorder: null, chunks: [], finalText: '', timer: null, audioUrl: null };
+
+        function recSupported() {
+            return !!SR && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && !!window.MediaRecorder;
+        }
+
+        function recBtn(index) { return document.getElementById('rec-btn-' + index); }
+        function recFb(index) { return document.getElementById('rec-fb-' + index); }
+
+        function setRecBtnIdle(index, label) {
+            const b = recBtn(index);
+            if (!b) return;
+            b.disabled = false;
+            b.classList.remove('recording');
+            b.textContent = label || '錄音跟讀';
+        }
+
+        function showRecMsg(index, msg) {
+            const fb = recFb(index);
+            if (!fb) return;
+            fb.hidden = false;
+            fb.innerHTML = `<div class="rec-heard">${escapeHtml(msg)}</div>`;
+        }
+
+        function toggleRecord(index) {
+            if (rec.active && rec.index === index) { finishRecording(); return; }
+            startRecording(index);
+        }
+
+        async function startRecording(index) {
+            if (!recSupported()) {
+                showRecMsg(index, '此瀏覽器不支援錄音辨識，請改用電腦版 Chrome 或 Edge，並允許使用麥克風。');
+                return;
+            }
+            stopRecording(true);
+            tts.stop(true); // 避免範讀聲音被一起收進去
+            const b = recBtn(index);
+            const fb = recFb(index);
+            if (rec.audioUrl) { URL.revokeObjectURL(rec.audioUrl); rec.audioUrl = null; }
+            let stream;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            } catch (e) {
+                showRecMsg(index, '無法使用麥克風（可能被拒絕或沒有麥克風），請檢查瀏覽器權限後再試一次。');
+                return;
+            }
+            const sid = ++rec.sid;
+            rec.active = true;
+            rec.index = index;
+            rec.stream = stream;
+            rec.chunks = [];
+            rec.finalText = '';
+            if (b) { b.disabled = false; b.classList.add('recording'); b.textContent = '停止錄音'; }
+            if (fb) { fb.hidden = false; fb.innerHTML = `<div class="rec-heard">聆聽中… 請唸出上面的英文句子，唸完按「停止錄音」。</div>`; }
+            // 同時錄音（供回放）與語音辨識（供評分）
+            try {
+                const mr = new MediaRecorder(stream);
+                rec.mediaRecorder = mr;
+                mr.ondataavailable = (e) => { if (e.data && e.data.size > 0) rec.chunks.push(e.data); };
+                mr.onstop = () => {
+                    if (rec.chunks.length === 0) return;
+                    try {
+                        if (rec.audioUrl) URL.revokeObjectURL(rec.audioUrl);
+                        rec.audioUrl = URL.createObjectURL(new Blob(rec.chunks, { type: mr.mimeType || 'audio/webm' }));
+                        const a = document.getElementById('rec-audio-' + index);
+                        if (a) { a.src = rec.audioUrl; a.hidden = false; }
+                    } catch (e) { /* 忽略回放錯誤 */ }
+                };
+                mr.start();
+            } catch (e) { rec.mediaRecorder = null; }
+            const r = new SR();
+            rec.recognition = r;
+            r.lang = 'en-US';
+            r.interimResults = true;
+            r.maxAlternatives = 1;
+            r.continuous = false;
+            r.onresult = (e) => {
+                if (sid !== rec.sid) return;
+                let interim = '';
+                for (let i = e.resultIndex; i < e.results.length; i++) {
+                    const tr = e.results[i][0].transcript;
+                    if (e.results[i].isFinal) rec.finalText += tr + ' ';
+                    else interim += tr;
+                }
+                const f = recFb(index);
+                if (f && rec.active) {
+                    const show = (rec.finalText + interim).trim();
+                    f.innerHTML = `<div class="rec-heard">聆聽中…${show ? '「' + escapeHtml(show) + '」' : '請開始唸。'}</div>`;
+                }
+            };
+            r.onerror = (e) => {
+                if (sid !== rec.sid) return;
+                if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+                    finalizeRecording(sid, true, '無法使用語音辨識（麥克風權限或網路問題），請確認已允許麥克風並保持連線後再試。');
+                }
+                // no-speech / aborted 等由 onend 統一收尾
+            };
+            r.onend = () => {
+                if (sid !== rec.sid || !rec.active) return;
+                finalizeRecording(sid, false);
+            };
+            try { r.start(); } catch (e) {
+                finalizeRecording(sid, true, '語音辨識啟動失敗，請改用電腦版 Chrome 或 Edge 再試一次。');
+                return;
+            }
+            rec.timer = setTimeout(() => { if (rec.active && rec.index === index) finishRecording(); }, 30000);
+        }
+
+        function finishRecording() {
+            if (!rec.active) return;
+            try { rec.recognition && rec.recognition.stop(); } catch (e) { /* 忽略 */ }
+            // 等待 onend → finalizeRecording 收尾（含 30 秒自動停止）
+        }
+
+        function stopRecording(silent) {
+            if (!rec.active) return;
+            rec.sid++;
+            rec.active = false;
+            if (rec.timer) { clearTimeout(rec.timer); rec.timer = null; }
+            const idx = rec.index;
+            try { rec.recognition && rec.recognition.abort(); } catch (e) { /* 忽略 */ }
+            try { rec.mediaRecorder && rec.mediaRecorder.state !== 'inactive' && rec.mediaRecorder.stop(); } catch (e) { /* 忽略 */ }
+            try { rec.stream && rec.stream.getTracks().forEach(t => t.stop()); } catch (e) { /* 忽略 */ }
+            rec.recognition = null; rec.mediaRecorder = null; rec.stream = null;
+            setRecBtnIdle(idx);
+            if (!silent) { const fb = recFb(idx); if (fb) fb.hidden = true; }
+        }
+
+        function finalizeRecording(sid, failed, failMsg) {
+            if (sid !== rec.sid || !rec.active) return;
+            rec.active = false;
+            if (rec.timer) { clearTimeout(rec.timer); rec.timer = null; }
+            const index = rec.index;
+            const target = activeStudent().lines[index].en;
+            const heard = (rec.finalText || '').trim();
+            try { rec.mediaRecorder && rec.mediaRecorder.state !== 'inactive' && rec.mediaRecorder.stop(); } catch (e) { /* 忽略 */ }
+            try { rec.stream && rec.stream.getTracks().forEach(t => t.stop()); } catch (e) { /* 忽略 */ }
+            rec.recognition = null; rec.mediaRecorder = null; rec.stream = null;
+            setRecBtnIdle(index, '再錄一次');
+            const fb = recFb(index);
+            if (!fb) return;
+            fb.hidden = false;
+            if (failed) {
+                fb.innerHTML = `<div class="rec-heard">${escapeHtml(failMsg || '辨識失敗，請再試一次。')}</div>`;
+                return;
+            }
+            if (!heard) {
+                fb.innerHTML = `<div class="rec-score low">沒有聽到聲音</div>` +
+                    `<div class="rec-heard">請靠近麥克風，大聲清楚地唸一次，再按「再錄一次」重試。也可以先按句子聽一次範讀。</div>`;
+                return;
+            }
+            const result = scorePronunciation(target, heard);
+            const cls = result.score >= 85 ? 'good' : (result.score >= 60 ? 'ok' : 'low');
+            let msg;
+            if (result.score === 100) msg = '完美！發音非常標準，繼續保持！';
+            else if (result.score >= 85) msg = '太棒了！幾乎完全正確，紅色的字再注意一下。';
+            else if (result.score >= 60) msg = '很好！先聽一次原音，再跟著慢慢唸一次，紅色的字多練習。';
+            else msg = '別灰心！先按句子聽一次範讀，跟著慢慢唸，再試一次一定更好。';
+            const words = target.split(/\s+/).map((w, wi) => {
+                const mark = result.wordMarks[wi];
+                const c = mark === true ? 'w-ok' : (mark === false ? 'w-miss' : 'w-skip');
+                return `<span class="${c}">${escapeHtml(w)}</span>`;
+            }).join(' ');
+            fb.innerHTML =
+                `<div class="rec-score ${cls}">${result.score} 分 · ${escapeHtml(msg)}</div>` +
+                `<div class="rec-heard">電腦聽到你說：「${escapeHtml(heard)}」</div>` +
+                `<div class="rec-words">${words}</div>` +
+                `<div class="rec-actions">` +
+                    `<audio id="rec-audio-${index}" controls hidden></audio>` +
+                    `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); playFromSentence(${index})">播放原音</button>` +
+                `</div>` +
+                `<div class="rec-tip">綠色＝電腦有聽到，紅色＝可能沒唸清楚或漏掉。辨識僅供參考，環境太吵會影響分數。</div>`;
+        }
+
+        // 單字層級比對（LCS）：原諒大小寫與標點，don't / grandfather's 等視為一個單字
+        function scorePronunciation(target, spoken) {
+            const tok = (s) => {
+                const parts = s.split(/\s+/);
+                const tokens = [], map = [];
+                parts.forEach((w, wi) => {
+                    const t = w.toLowerCase().replace(/'/g, '').replace(/[^a-z0-9]/g, '');
+                    if (t) { tokens.push(t); map.push(wi); }
+                });
+                return { tokens, map, count: parts.length };
+            };
+            const T = tok(target), S = tok(spoken);
+            const n = T.tokens.length, m = S.tokens.length;
+            const wordMarks = new Array(T.count).fill(null);
+            if (n === 0) return { score: 0, wordMarks };
+            if (m === 0) {
+                T.map.forEach((wi) => { wordMarks[wi] = false; });
+                return { score: 0, wordMarks };
+            }
+            const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+            for (let i = n - 1; i >= 0; i--) {
+                for (let j = m - 1; j >= 0; j--) {
+                    dp[i][j] = T.tokens[i] === S.tokens[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+                }
+            }
+            const hitToken = new Array(n).fill(false);
+            let i = 0, j = 0;
+            while (i < n && j < m) {
+                if (T.tokens[i] === S.tokens[j]) { hitToken[i] = true; i++; j++; }
+                else if (dp[i + 1][j] >= dp[i][j + 1]) i++;
+                else j++;
+            }
+            let hit = 0;
+            hitToken.forEach((h, k) => {
+                wordMarks[T.map[k]] = h;
+                if (h) hit++;
+            });
+            // 從未對應到的顯示字（純標點）標為 skip
+            for (let k = 0; k < wordMarks.length; k++) {
+                if (wordMarks[k] === undefined || wordMarks[k] === null) wordMarks[k] = 'skip';
+            }
+            return { score: Math.round((hit / n) * 100), wordMarks };
         }
 
         // 匯出目前分頁學生的朗讀稿 PDF（經由瀏覽器列印 → 另存為 PDF）
