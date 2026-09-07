@@ -744,6 +744,19 @@
             try {
                 stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
                 logDiag('麥克風取得成功');
+            // 檢查音訊軌道是否真的啟用
+            const audioTracks = stream.getAudioTracks();
+            logDiag('音訊軌道數: ' + audioTracks.length);
+            if (audioTracks.length > 0) {
+                logDiag('裝置: ' + audioTracks[0].label);
+                logDiag('啟用: ' + audioTracks[0].enabled + ', 狀態: ' + audioTracks[0].readyState);
+                if (!audioTracks[0].enabled) {
+                    audioTracks[0].enabled = true;
+                    logDiag('已強制啟用音訊軌道');
+                }
+            } else {
+                logDiag('警告：沒有音訊軌道！');
+            }
             } catch (e) {
                 logDiag('麥克風失敗: ' + e.message);
                 showRecMsg(index, buildDiag('無法使用麥克風（可能被拒絕或沒有麥克風），請檢查瀏覽器權限後再試一次。'));
@@ -843,31 +856,42 @@
         function startMeter(index, stream) {
             stopMeter();
             try {
-                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const AC = window.AudioContext || window.webkitAudioContext;
+                if (!AC) { logDiag('AudioContext 不支援'); return; }
+                const audioCtx = new AC();
                 const source = audioCtx.createMediaStreamSource(stream);
                 const analyser = audioCtx.createAnalyser();
                 analyser.fftSize = 256;
                 source.connect(analyser);
                 rec.audioCtx = audioCtx;
                 rec.analyser = analyser;
+                logDiag('AudioContext state: ' + audioCtx.state);
+                // 部分瀏覽器 AudioContext 預設暫停，必須手動恢復
+                audioCtx.resume().then(() => {
+                    logDiag('AudioContext 已恢復');
+                }).catch(e => {
+                    logDiag('AudioContext resume 失敗: ' + e.message);
+                });
                 const data = new Uint8Array(analyser.frequencyBinCount);
                 rec.meterTimer = setInterval(() => {
-                    analyser.getByteFrequencyData(data);
-                    let sum = 0;
-                    for (let i = 0; i < data.length; i++) sum += data[i];
-                    const avg = sum / data.length;
-                    const pct = Math.min(avg / 128 * 100, 100);
-                    const fill = recMeterFill(index);
-                    const label = recMeterLabel(index);
-                    if (fill) {
-                        fill.style.width = pct + '%';
-                        fill.className = 'rec-meter-fill' + (pct > 60 ? ' high' : pct > 25 ? ' mid' : pct > 2 ? ' low' : '');
-                    }
-                    if (label) {
-                        label.textContent = pct < 2 ? '無聲音' : pct < 25 ? '小聲' : pct < 60 ? '正常' : '大聲';
-                    }
+                    try {
+                        analyser.getByteFrequencyData(data);
+                        let sum = 0;
+                        for (let i = 0; i < data.length; i++) sum += data[i];
+                        const avg = sum / data.length;
+                        const pct = Math.min(avg / 128 * 100, 100);
+                        const fill = recMeterFill(index);
+                        const label = recMeterLabel(index);
+                        if (fill) {
+                            fill.style.width = pct + '%';
+                            fill.className = 'rec-meter-fill' + (pct > 60 ? ' high' : pct > 25 ? ' mid' : pct > 2 ? ' low' : '');
+                        }
+                        if (label) {
+                            label.textContent = pct < 2 ? '無聲音' : pct < 25 ? '小聲' : pct < 60 ? '正常' : '大聲';
+                        }
+                    } catch (e) { /* 忽略 */ }
                 }, 100);
-            } catch (e) { logDiag('音量條失敗: ' + e.message); }
+            } catch (e) { logDiag('音量條建立失敗: ' + e.message); }
         }
 
         function recMeterLabel(index) { return document.getElementById('rec-meter-label-' + index); }
