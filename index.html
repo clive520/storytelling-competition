@@ -681,7 +681,7 @@
 
         // ---------- 錄音跟讀 ＋ 電腦評分 ----------
         const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-        let rec = { active: false, index: -1, sid: 0, recognition: null, stream: null, mediaRecorder: null, chunks: [], finalText: '', timer: null, audioUrl: null };
+        let rec = { active: false, pending: false, index: -1, sid: 0, recognition: null, stream: null, mediaRecorder: null, chunks: [], finalText: '', timer: null, audioUrl: null };
 
         function recSupported() {
             return !!SR && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && !!window.MediaRecorder;
@@ -706,6 +706,7 @@
         }
 
         function toggleRecord(index) {
+            if (rec.pending) return; // 辨識中，請稍候
             if (rec.active && rec.index === index) { finishRecording(); return; }
             startRecording(index);
         }
@@ -729,6 +730,7 @@
             }
             const sid = ++rec.sid;
             rec.active = true;
+            rec.pending = false;
             rec.index = index;
             rec.stream = stream;
             rec.chunks = [];
@@ -779,7 +781,7 @@
                 // no-speech / aborted 等由 onend 統一收尾
             };
             r.onend = () => {
-                if (sid !== rec.sid || !rec.active) return;
+                if (sid !== rec.sid || (!rec.active && !rec.pending)) return;
                 finalizeRecording(sid, false);
             };
             try { r.start(); } catch (e) {
@@ -790,15 +792,31 @@
         }
 
         function finishRecording() {
-            if (!rec.active) return;
-            try { rec.recognition && rec.recognition.stop(); } catch (e) { /* 忽略 */ }
-            // 等待 onend → finalizeRecording 收尾（含 30 秒自動停止）
+            if (!rec.active || rec.pending) return;
+            const sid = rec.sid, index = rec.index;
+            // 立刻關麥克風、切換按鈕，讓使用者馬上看到「已停止」
+            rec.active = false;
+            rec.pending = true;
+            if (rec.timer) { clearTimeout(rec.timer); rec.timer = null; }
+            try { rec.stream && rec.stream.getTracks().forEach(t => t.stop()); } catch (e) { /* 忽略 */ }
+            try { rec.mediaRecorder && rec.mediaRecorder.state !== 'inactive' && rec.mediaRecorder.stop(); } catch (e) { /* 忽略 */ }
+            const b = recBtn(index), fb = recFb(index);
+            if (b) { b.disabled = true; b.classList.remove('recording'); b.textContent = '辨識中…'; }
+            if (fb) { fb.hidden = false; fb.innerHTML = `<div class="rec-heard">已停止錄音，電腦辨識中…</div>`; }
+            // 保險絲：若瀏覽器的 onend 沒回來（網路慢或異常），3 秒後強制用已收到的文字結算
+            setTimeout(() => {
+                if (sid === rec.sid && rec.pending) finalizeRecording(sid, false);
+            }, 3000);
+            try { rec.recognition && rec.recognition.stop(); } catch (e) {
+                finalizeRecording(sid, false); // stop() 直接報錯就地收尾
+            }
         }
 
         function stopRecording(silent) {
-            if (!rec.active) return;
+            if (!rec.active && !rec.pending) return;
             rec.sid++;
             rec.active = false;
+            rec.pending = false;
             if (rec.timer) { clearTimeout(rec.timer); rec.timer = null; }
             const idx = rec.index;
             try { rec.recognition && rec.recognition.abort(); } catch (e) { /* 忽略 */ }
@@ -810,12 +828,14 @@
         }
 
         function finalizeRecording(sid, failed, failMsg) {
-            if (sid !== rec.sid || !rec.active) return;
+            if (sid !== rec.sid || (!rec.active && !rec.pending)) return;
             rec.active = false;
+            rec.pending = false;
             if (rec.timer) { clearTimeout(rec.timer); rec.timer = null; }
             const index = rec.index;
             const target = activeStudent().lines[index].en;
             const heard = (rec.finalText || '').trim();
+            try { rec.recognition && rec.recognition.abort(); } catch (e) { /* 忽略 */ }
             try { rec.mediaRecorder && rec.mediaRecorder.state !== 'inactive' && rec.mediaRecorder.stop(); } catch (e) { /* 忽略 */ }
             try { rec.stream && rec.stream.getTracks().forEach(t => t.stop()); } catch (e) { /* 忽略 */ }
             rec.recognition = null; rec.mediaRecorder = null; rec.stream = null;
@@ -853,6 +873,9 @@
                     `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); playFromSentence(${index})">播放原音</button>` +
                 `</div>` +
                 `<div class="rec-tip">綠色＝電腦有聽到，紅色＝可能沒唸清楚或漏掉。辨識僅供參考，環境太吵會影響分數。</div>`;
+            // 錄音檔若已先產生（比回饋卡早），在這裡接上；否則由 onstop 回來時接上
+            const aud = document.getElementById('rec-audio-' + index);
+            if (aud && rec.audioUrl) { aud.src = rec.audioUrl; aud.hidden = false; }
         }
 
         // 單字層級比對（LCS）：原諒大小寫與標點，don't / grandfather's 等視為一個單字
