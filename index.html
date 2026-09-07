@@ -825,18 +825,21 @@
             r.maxAlternatives = 1;
             r.continuous = true;
             logDiag('啟動語音辨識...');
-            r.onresult = (e) => {
-                if (sid !== rec.sid) return;
-                let interim = '';
-                for (let i = e.resultIndex; i < e.results.length; i++) {
-                    const tr = e.results[i][0].transcript;
-                    if (e.results[i].isFinal) {
-                        rec.finalText += tr + ' ';
-                        logDiag('辨識到(終): ' + tr);
-                    } else {
-                        interim += tr;
+                r.onresult = (e) => {
+                    if (sid !== rec.sid) return;
+                    logDiag('onresult 觸發, resultIndex=' + e.resultIndex + ', results.length=' + e.results.length);
+                    let interim = '';
+                    for (let i = e.resultIndex; i < e.results.length; i++) {
+                        const tr = e.results[i][0].transcript;
+                        const conf = e.results[i][0].confidence;
+                        if (e.results[i].isFinal) {
+                            rec.finalText += tr + ' ';
+                            logDiag('辨識到(終): "' + tr + '" (信心: ' + conf.toFixed(2) + ')');
+                        } else {
+                            interim += tr;
+                            logDiag('辨識中(暫): "' + tr + '"');
+                        }
                     }
-                }
                 const f = recFb(index);
                 if (f && rec.active) {
                     const show = (rec.finalText + interim).trim();
@@ -846,11 +849,12 @@
             };
             r.onerror = (e) => {
                 if (sid !== rec.sid) return;
-                logDiag('辨識錯誤: ' + e.error);
+                logDiag('辨識錯誤: ' + e.error + ' (message: ' + (e.message || 'none') + ')');
+                // 所有錯誤都記錄，不只 not-allowed
                 if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
                     finalizeRecording(sid, true, '麥克風權限被拒絕，請在瀏覽器設定中允許此網站使用麥克風。');
                 }
-                // no-speech / audio-capture / network 等由 onend 統一收尾
+                // no-speech / audio-capture / network / aborted 等由 onend 統一收尾
             };
             r.onend = () => {
                 logDiag('辨識結束, finalText=' + JSON.stringify(rec.finalText));
@@ -860,6 +864,18 @@
             try {
                 r.start();
                 logDiag('語音辨識已啟動');
+                // 5 秒後若完全沒收到任何辨識結果，顯示提示
+                setTimeout(() => {
+                    if (sid !== rec.sid) return;
+                    if (!rec.finalText && rec.active) {
+                        logDiag('5 秒無辨識結果');
+                        const f = recFb(index);
+                        if (f && rec.active) {
+                            f.innerHTML = `<div class="rec-heard">已收到你的聲音（音量條有動），但語音辨識尚未回傳文字，請繼續說或按「停止錄音」。</div>` + meterHtml(index);
+                            startMeter(index, rec.stream);
+                        }
+                    }
+                }, 5000);
             } catch (e) {
                 logDiag('語音辨識啟動失敗: ' + e.message);
                 finalizeRecording(sid, true, '語音辨識啟動失敗（' + e.message + '），請改用電腦版 Chrome 或 Edge 再試一次。');
