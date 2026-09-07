@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Storytelling Competition - 說故事比賽</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Noto Sans TC', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        header {
+            text-align: center;
+            padding: 30px 20px;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            margin-bottom: 24px;
+        }
+        header h1 {
+            color: #2c3e50;
+            font-size: 2.2rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        header p {
+            color: #7f8c8d;
+            font-size: 1.1rem;
+        }
+        .story-card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            padding: 24px;
+            margin-bottom: 24px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .story-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+        }
+        .story-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid #f0f2f5;
+        }
+        .student-avatar {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: white;
+        }
+        .student-avatar.female { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+        .student-avatar.male { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+        .student-info h3 {
+            font-size: 1.2rem;
+            color: #2c3e50;
+            font-weight: 600;
+        }
+        .student-info span {
+            font-size: 0.85rem;
+            color: #95a5a6;
+        }
+        .story-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #34495e;
+            margin-bottom: 16px;
+        }
+        .story-text {
+            line-height: 1.8;
+            font-size: 1.05rem;
+            color: #2c3e50;
+        }
+        .sentence {
+            display: block;
+            padding: 8px 12px;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            margin: 4px 0;
+        }
+        .sentence:hover {
+            background: #f8f9fa;
+        }
+        .sentence.playing {
+            background: linear-gradient(90deg, #e8f4fd 0%, #d6eaff 100%);
+            border-left: 4px solid #4facfe;
+        }
+        .sentence.spoken {
+            color: #95a5a6;
+        }
+        .controls {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid #f0f2f5;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+        }
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(79, 172, 254, 0.4);
+        }
+        .btn-secondary {
+            background: #f0f2f5;
+            color: #2c3e50;
+        }
+        .btn-secondary:hover {
+            background: #e4e8eb;
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .progress-bar {
+            flex: 1;
+            min-width: 150px;
+            height: 6px;
+            background: #f0f2f5;
+            border-radius: 3px;
+            overflow: hidden;
+            align-self: center;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+            width: 0%;
+            transition: width 0.1s linear;
+            border-radius: 3px;
+        }
+        .speed-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9rem;
+            color: #7f8c8d;
+        }
+        .speed-control input {
+            width: 100px;
+            accent-color: #4facfe;
+        }
+        .voice-status {
+            text-align: center;
+            padding: 12px;
+            background: #fff3cd;
+            border-radius: 8px;
+            color: #856404;
+            font-size: 0.9rem;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .voice-status.show { display: block; }
+        footer {
+            text-align: center;
+            padding: 20px;
+            color: #95a5a6;
+            font-size: 0.9rem;
+        }
+        @media (max-width: 600px) {
+            header h1 { font-size: 1.6rem; }
+            .story-card { padding: 16px; }
+            .controls { flex-direction: column; }
+            .progress-bar { width: 100%; }
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>說故事比賽作品集</h1>
+            <p>Storytelling Competition Collection</p>
+        </header>
+
+        <div id="voiceStatus" class="voice-status">
+            正在載入語音引擎... 請稍候
+        </div>
+
+        <div id="stories"></div>
+
+        <footer>
+            <p>使用瀏覽器內建語音合成 (Web Speech API) | 適合練習聽力與跟讀</p>
+        </footer>
+    </div>
+
+    <script>
+        // Student data with stories
+        const students = [
+            {
+                id: '60124',
+                name: '何禹潼',
+                gender: 'female',
+                title: 'The Weight of Air',
+                story: `In the City of Glass, citizens were defined by their burdens. Every adult carried a large stone. The heavier the stone, the more respect they earned. Kael carried the heaviest stone of all. It was jagged, dark, and represented his greatest regret.
+Kael climbed the Mountain of Whispers to find relief.
+Halfway up, a Blacksmith offered to encase the stone in iron. "Protect your burden," he said. Kael refused. "Iron makes it heavier."
+Higher up, a Jeweler offered to coat it in gold. "Make your pain beautiful," she said. Kael refused. "Gold only hides the weight."
+Near the summit, a Scholar offered to write a book about it. "Analyze your burden," he said. Kael refused. "Analysis does not lift it."
+Kael reached the absolute peak. The wind howled. His knees buckled under the crushing weight. He didn't throw the stone. Instead, he looked directly at it, accepted his past, and whispered:
+The stone instantly turned to mist, blowing away into the sky. Kael stood completely straight for the first time. He realized the heaviest burdens aren't made of rock; they are made of the regrets we refuse to let go.`
+            },
+            {
+                id: '60120',
+                name: '蔡亞璇',
+                gender: 'female',
+                title: 'The Boy and the Apple Tree',
+                story: `Once upon a time, a little boy loved a big apple tree.
+Every day, he played under the tree, climbed its branches, and ate sweet apples.
+The tree loved the boy, and they were very happy.
+As time went by, the boy grew up and stopped visiting.
+One day, he returned looking sad. "I want toys, but I have no money," he said.
+The tree smiled and said, "Take my apples and sell them in town."
+The boy picked all the apples and ran away happily.
+Many years passed. The boy did not return, and the tree felt very lonely.`
+            },
+            {
+                id: '60122',
+                name: '陳柏舜',
+                gender: 'male',
+                title: 'Leo and the Time Radio',
+                story: `Leo found the radio at the back of his grandfather's dusty garage. It wasn't anything sleek or modern; it was a bulky, wooden box with a glowing amber dial and brass knobs that felt heavy and cold to the touch. He only plugged it in to see if the ancient tubes still worked. They did, humming to life with a soft, warm light, but the speaker only offered a steady wall of static.
+He turned the largest knob, listening to the hiss and crackle, until suddenly, a voice cut through the noise. It wasn't a local DJ or a familiar news anchor. The voice sounded incredibly clear, speaking in a calm, almost mechanical rhythm.
+"Attention citizens of Sector Four. Tomorrow's solar transit will cause minor disruptions to all aerial tram schedules. Please plan for a ten-minute delay. Also, remember to calibrate your UV-reflective gear; the atmospheric glare will be particularly intense this week."
+Leo froze, his hand hovering over the dial. Aerial trams? Sector Four? He carefully twisted the knob a fraction of an inch, hoping to catch more, but the station vanished, swallowed instantly back into the white noise.
+Over the next few weeks, Leo became completely absorbed by the device. He spent every afternoon in the sweltering garage, meticulously adjusting the brass dials. He quickly learned that the radio didn't tune into different geographical stations; it tuned into different eras. On a rainy Tuesday, he heard a broadcast from what sounded like a deep-sea colony, the announcer complaining about saltwater corrosion on the exterior domes. On Thursday, he caught a snippet of a music countdown featuring synthesized instruments he couldn't even imagine, played by bands broadcasting from the late 22nd century.
+He tried to record the voices on his phone, desperate for proof, but whenever he played the audio back, the recordings held nothing but regular, unbroken static. The anomaly, it seemed, existed strictly between his own ears and the strange wooden box.
+Eventually, Leo stopped trying to capture the audio or prove it to his friends. It became his own private window into the unknown, a quiet assurance that no matter how stressful his upcoming exams or daily teenage struggles felt, humanity was still out there in the distant future. They were still riding transit, complaining about the weather, and listening to the radio. The world was going to keep spinning, and for a teenager trying to figure out his own small place in it, that was exactly what he needed to hear.`
+            },
+            {
+                id: '60115',
+                name: '林云晴',
+                gender: 'female',
+                title: 'The Magic Seed',
+                story: `Ben was a young boy who lived near a giant, ancient forest. Unlike his brothers, who loved building wooden swords and running wild, Ben loved watching plants grow. He spent every afternoon in his small garden, caring for his flowers.
+One rainy afternoon, an old traveler stopped by Ben's house. "Thank you for the warm tea, young boy," the traveler said, reaching into his pocket. "Take this golden seed. If you care for it with patience, it will show you something magical."
+Ben planted the tiny seed in a small clay pot. Every morning, he gave it clear water and placed it in the brightest sunlight. Days passed, but nothing grew. His brothers laughed and said, "It is just an empty shell, Ben! Give up!"
+However, Ben did not lose hope. He remembered the traveler's words about patience. On the seventh morning, a tiny green shoot popped out of the soil. Day by day, it grew taller, until a glowing, silver flower bloomed!
+The flower filled the air with a sweet scent and brought colorful butterflies from all over the forest. Ben's brothers watched in complete wonder.
+Ben smiled and said, "Great things take time to grow. All we need is a little patience."`
+            },
+            {
+                id: '60126',
+                name: '吳丹楓',
+                gender: 'female',
+                title: 'The Bowl of Soup',
+                story: `One evening, Xiao-An went to her Japanese friend's house for dinner. It was her first time having dinner with a Japanese family, so she was very excited and curious about their culture.
+When she arrived, her friend's grandmother welcomed her warmly. The dining table was filled with delicious food. Before dinner began, Xiao-An noticed a bowl of hot soup on a small table near the window. It smelled wonderful, and she thought it was prepared for the guests.
+Without thinking, she picked it up and took a sip.
+"Wow! This soup is delicious. Thank you!" she said.
+Her friend suddenly looked surprised.
+"You drank that soup?"
+Xiao-An looked confused. "Yes. Isn't it for us?"
+Her friend explained, "Actually, no. It is an offering for our ancestors. We place food there to remember our family members who have passed away."
+Xiao-An immediately put down the bowl.
+"Oh, I'm really sorry. I didn't know."
+She felt embarrassed, but her friend's grandmother simply smiled.
+"Don't worry," she said. "You didn't know our customs. Every culture has different traditions."
+She then made a new bowl of soup for Xiao-An.
+"This one is for you."
+Xiao-An felt grateful and thanked her.
+During dinner, the two girls talked about their families. Xiao-An discovered that her own family also prepares food for their ancestors during special holidays.
+She realized that something ordinary in one culture can have a completely different meaning in another. Instead of thinking that something is strange, we should learn about it and respect it.
+Although their traditions were different, both families shared the same love for their ancestors.
+Xiao-An smiled and thought, "Maybe different cultures are not so different after all."
+Different traditions can teach us about each other, and understanding can bring people closer together.`
+            }
+        ];
+
+        // Split story into sentences
+        function splitSentences(text) {
+            return text.split(/(?<=[.!?])\s+(?=[A-Z"])|\n\s*\n/).filter(s => s.trim().length > 0);
+        }
+
+        // TTS Manager
+        class TTSManager {
+            constructor() {
+                this.synth = window.speechSynthesis;
+                this.voices = [];
+                this.currentUtterance = null;
+                this.currentStudent = null;
+                this.currentSentenceIndex = 0;
+                this.sentences = [];
+                this.isPlaying = false;
+                this.isPaused = false;
+                this.speed = 0.7; // Slow speed for learning
+                this.onSentenceChange = null;
+                this.onEnd = null;
+                this.loadVoices();
+            }
+
+            loadVoices() {
+                this.voices = this.synth.getVoices();
+                if (this.voices.length === 0) {
+                    this.synth.onvoiceschanged = () => this.loadVoices();
+                }
+                this.updateVoiceStatus();
+            }
+
+            updateVoiceStatus() {
+                const statusEl = document.getElementById('voiceStatus');
+                const hasVoices = this.voices.length > 0;
+                const hasFemale = this.voices.some(v => v.name.toLowerCase().includes('female') || v.name.includes('女') || v.name.includes('Zira') || v.name.includes('Huihui') || v.name.includes('Mei'));
+                const hasMale = this.voices.some(v => v.name.toLowerCase().includes('male') || v.name.includes('男') || v.name.includes('David') || v.name.includes('Kangkang'));
+
+                if (!hasVoices) {
+                    statusEl.textContent = '語音引擎載入中... 請稍候';
+                    statusEl.classList.add('show');
+                } else if (!hasFemale || !hasMale) {
+                    statusEl.textContent = `已載入 ${this.voices.length} 個語音 (建議使用 Chrome/Edge 獲得最佳中英文混合語音)`;
+                    statusEl.classList.add('show');
+                } else {
+                    statusEl.classList.remove('show');
+                }
+            }
+
+            getVoice(gender) {
+                // Prefer natural-sounding voices for English
+                const prefs = gender === 'female' 
+                    ? ['Microsoft Zira', 'Microsoft Huihui', 'Google US English Female', 'Google UK English Female', 'Samantha', 'Karen', 'Veena']
+                    : ['Microsoft David', 'Microsoft Kangkang', 'Google US English Male', 'Google UK English Male', 'Alex', 'Daniel', 'Ravi'];
+
+                for (const pref of prefs) {
+                    const voice = this.voices.find(v => v.name.includes(pref));
+                    if (voice) return voice;
+                }
+
+                // Fallback: any voice matching gender keyword
+                const keyword = gender === 'female' ? 'female' : 'male';
+                let voice = this.voices.find(v => v.name.toLowerCase().includes(keyword));
+                if (voice) return voice;
+
+                // Last resort: first available voice
+                return this.voices[0] || null;
+            }
+
+            speak(student, sentences, startIndex = 0) {
+                this.stop();
+                this.currentStudent = student;
+                this.sentences = sentences;
+                this.currentSentenceIndex = startIndex;
+                this.isPlaying = true;
+                this.isPaused = false;
+                this.speakNext();
+            }
+
+            speakNext() {
+                if (this.currentSentenceIndex >= this.sentences.length) {
+                    this.onEnd?.();
+                    return;
+                }
+
+                const sentence = this.sentences[this.currentSentenceIndex].trim();
+                if (!sentence) {
+                    this.currentSentenceIndex++;
+                    this.speakNext();
+                    return;
+                }
+
+                this.currentUtterance = new SpeechSynthesisUtterance(sentence);
+                this.currentUtterance.lang = 'en-US';
+                this.currentUtterance.rate = this.speed;
+                this.currentUtterance.pitch = 1;
+                this.currentUtterance.volume = 1;
+
+                const voice = this.getVoice(this.currentStudent.gender);
+                if (voice) this.currentUtterance.voice = voice;
+
+                this.currentUtterance.onstart = () => {
+                    this.onSentenceChange?.(this.currentSentenceIndex, 'playing');
+                };
+
+                this.currentUtterance.onend = () => {
+                    this.onSentenceChange?.(this.currentSentenceIndex, 'spoken');
+                    this.currentSentenceIndex++;
+                    if (this.isPlaying && !this.isPaused) {
+                        this.speakNext();
+                    }
+                };
+
+                this.currentUtterance.onerror = (e) => {
+                    console.error('TTS Error:', e);
+                    this.currentSentenceIndex++;
+                    if (this.isPlaying) this.speakNext();
+                };
+
+                this.synth.speak(this.currentUtterance);
+            }
+
+            pause() {
+                if (this.isPlaying && !this.isPaused) {
+                    this.synth.pause();
+                    this.isPaused = true;
+                }
+            }
+
+            resume() {
+                if (this.isPlaying && this.isPaused) {
+                    this.synth.resume();
+                    this.isPaused = false;
+                }
+            }
+
+            stop() {
+                this.synth.cancel();
+                this.isPlaying = false;
+                this.isPaused = false;
+                this.currentUtterance = null;
+                if (this.currentStudent && this.sentences.length) {
+                    this.onSentenceChange?.(this.currentSentenceIndex, 'reset');
+                }
+            }
+
+            setSpeed(speed) {
+                this.speed = speed;
+                if (this.currentUtterance) {
+                    this.currentUtterance.rate = speed;
+                }
+            }
+
+            speakSentence(student, sentenceIndex, sentences) {
+                this.stop();
+                this.currentStudent = student;
+                this.sentences = sentences;
+                this.currentSentenceIndex = sentenceIndex;
+                this.isPlaying = true;
+                this.speakNext();
+            }
+        }
+
+        const tts = new TTSManager();
+
+        // Render stories
+        function renderStories() {
+            const container = document.getElementById('stories');
+            container.innerHTML = students.map(student => {
+                const sentences = splitSentences(student.story);
+                const sentenceElements = sentences.map((s, i) => 
+                    `<span class="sentence" data-index="${i}" onclick="playFromSentence('${student.id}', ${i})">${escapeHtml(s)}</span>`
+                ).join(' ');
+
+                return `
+                    <article class="story-card" id="story-${student.id}">
+                        <div class="story-header">
+                            <div class="student-avatar ${student.gender}">${student.name.charAt(0)}</div>
+                            <div class="student-info">
+                                <h3>${student.name} (${student.id})</h3>
+                                <span>${student.gender === 'female' ? '女生' : '男生'} · ${sentences.length} 句</span>
+                            </div>
+                        </div>
+                        <h2 class="story-title">${student.title}</h2>
+                        <div class="story-text">${sentenceElements}</div>
+                        <div class="controls">
+                            <button class="btn btn-primary" onclick="playStory('${student.id}')" id="play-${student.id}">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                                播放全文
+                            </button>
+                            <button class="btn btn-secondary" onclick="pauseStory('${student.id}')" id="pause-${student.id}" disabled>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                                暫停
+                            </button>
+                            <button class="btn btn-secondary" onclick="stopStory('${student.id}')" id="stop-${student.id}" disabled>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>
+                                停止
+                            </button>
+                            <div class="progress-bar" id="progress-${student.id}">
+                                <div class="progress-fill" id="progress-fill-${student.id}"></div>
+                            </div>
+                            <div class="speed-control">
+                                <span>語速</span>
+                                <input type="range" min="0.5" max="1.5" step="0.1" value="0.7" 
+                                    onchange="setSpeed('${student.id}', this.value)" id="speed-${student.id}">
+                                <span id="speed-val-${student.id}">0.7x</span>
+                            </div>
+                        </div>
+                    </article>
+                `;
+            }).join('');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Play controls
+        function playStory(studentId) {
+            const student = students.find(s => s.id === studentId);
+            const sentences = splitSentences(student.story);
+            tts.onSentenceChange = (idx, state) => updateSentenceUI(studentId, idx, state);
+            tts.onEnd = () => resetControls(studentId);
+            tts.speak(student, sentences, 0);
+            setPlayingState(studentId, true);
+        }
+
+        function playFromSentence(studentId, index) {
+            const student = students.find(s => s.id === studentId);
+            const sentences = splitSentences(student.story);
+            tts.onSentenceChange = (idx, state) => updateSentenceUI(studentId, idx, state);
+            tts.onEnd = () => resetControls(studentId);
+            tts.speak(student, sentences, index);
+            setPlayingState(studentId, true);
+        }
+
+        function pauseStory(studentId) {
+            tts.pause();
+            const pauseBtn = document.getElementById(`pause-${studentId}`);
+            const playBtn = document.getElementById(`play-${studentId}`);
+            if (tts.isPaused) {
+                pauseBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> 繼續`;
+            } else {
+                pauseBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg> 暫停`;
+            }
+        }
+
+        function stopStory(studentId) {
+            tts.stop();
+            resetControls(studentId);
+        }
+
+        function resetControls(studentId) {
+            setPlayingState(studentId, false);
+            // Reset all sentence highlights
+            document.querySelectorAll(`#story-${studentId} .sentence`).forEach(el => {
+                el.classList.remove('playing', 'spoken');
+            });
+        }
+
+        function setPlayingState(studentId, playing) {
+            const playBtn = document.getElementById(`play-${studentId}`);
+            const pauseBtn = document.getElementById(`pause-${studentId}`);
+            const stopBtn = document.getElementById(`stop-${studentId}`);
+            playBtn.disabled = playing;
+            pauseBtn.disabled = !playing;
+            stopBtn.disabled = !playing;
+            if (!playing) {
+                pauseBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg> 暫停`;
+            }
+        }
+
+        function updateSentenceUI(studentId, index, state) {
+            const sentences = document.querySelectorAll(`#story-${studentId} .sentence`);
+            sentences.forEach((el, i) => {
+                el.classList.remove('playing', 'spoken');
+                if (i < index) el.classList.add('spoken');
+                else if (i === index && state === 'playing') el.classList.add('playing');
+            });
+
+            // Update progress bar
+            const total = sentences.length;
+            const progress = ((index + (state === 'spoken' ? 1 : 0)) / total) * 100;
+            document.getElementById(`progress-fill-${studentId}`).style.width = `${Math.min(progress, 100)}%`;
+        }
+
+        function setSpeed(studentId, value) {
+            tts.setSpeed(parseFloat(value));
+            document.getElementById(`speed-val-${studentId}`).textContent = `${value}x`;
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            renderStories();
+            // Re-check voices after a moment
+            setTimeout(() => tts.loadVoices(), 500);
+        });
+    </script>
+</body>
+</html>
