@@ -21,6 +21,25 @@
         header h1 { color: #2c3e50; font-size: 2rem; font-weight: 700; margin-bottom: 8px; }
         header p { color: #7f8c8d; font-size: 1rem; }
 
+        /* 工具列：顯示模式 + 匯出 PDF */
+        .toolbar {
+            display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+            background: white; border-radius: 14px; padding: 12px 14px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08); margin-bottom: 12px;
+        }
+        .seg { display: flex; background: #f0f2f5; border-radius: 10px; padding: 4px; gap: 4px; }
+        .seg-btn {
+            border: none; background: transparent; cursor: pointer;
+            padding: 8px 18px; border-radius: 8px;
+            font-size: 0.95rem; font-weight: 600; color: #5d6d7e;
+            transition: all 0.2s;
+        }
+        .seg-btn.active {
+            background: linear-gradient(135deg, #4facfe 0%, #00c6ff 100%);
+            color: white; box-shadow: 0 2px 8px rgba(79,172,254,0.4);
+        }
+        .export-group { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+
         /* 分頁籤 */
         .tabs {
             position: sticky; top: 10px; z-index: 50;
@@ -77,6 +96,12 @@
             border-left: 4px solid #4facfe;
         }
         .sentence.spoken { color: #95a5a6; }
+        .sentence .en { display: block; }
+        .sentence .zh {
+            display: block; font-size: 0.95rem; color: #7f8c8d;
+            margin-top: 4px; line-height: 1.7;
+        }
+        .sentence.spoken .zh { color: #bdc3c7; }
 
         /* 底部常駐播放列 */
         .player-bar {
@@ -86,9 +111,7 @@
             box-shadow: 0 -6px 24px rgba(0,0,0,0.12);
             backdrop-filter: blur(8px);
         }
-        .player-inner {
-            max-width: 900px; margin: 0 auto; padding: 12px 16px 14px 16px;
-        }
+        .player-inner { max-width: 900px; margin: 0 auto; padding: 12px 16px 14px 16px; }
         .player-info {
             display: flex; justify-content: space-between; align-items: center;
             font-size: 0.85rem; color: #5d6d7e; margin-bottom: 8px; gap: 8px;
@@ -96,7 +119,7 @@
         .player-info strong { color: #2c3e50; }
         .player-progress {
             height: 8px; background: #eef1f4; border-radius: 4px;
-            overflow: hidden; margin-bottom: 10px; cursor: pointer;
+            overflow: hidden; margin-bottom: 10px;
         }
         .player-progress-fill {
             height: 100%; width: 0%;
@@ -114,6 +137,7 @@
         .btn-secondary { background: #f0f2f5; color: #2c3e50; }
         .btn-secondary:hover { background: #e4e8eb; }
         .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+        .btn-sm { padding: 8px 14px; font-size: 0.88rem; }
         .speed-control { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; color: #7f8c8d; margin-left: auto; }
         .speed-control input { width: 110px; accent-color: #4facfe; }
 
@@ -124,9 +148,27 @@
         }
         .voice-status.show { display: block; }
         footer { text-align: center; padding: 20px; color: #95a5a6; font-size: 0.85rem; }
+
+        /* 列印專用（螢幕上隱藏，列印時只顯示稿件） */
+        .print-area { display: none; }
+        @media print {
+            body { background: #fff; padding: 0; }
+            .container, .player-bar { display: none !important; }
+            .print-area { display: block !important; color: #000; }
+            .sheet h1 { font-size: 20pt; margin-bottom: 6px; }
+            .sheet .meta { font-size: 11pt; color: #333; margin-bottom: 14px; }
+            .sheet ol.script { margin-left: 22px; }
+            .sheet ol.script li { margin-bottom: 10px; }
+            .sheet .p-en { font-size: 12pt; line-height: 1.6; }
+            .sheet .p-zh { font-size: 11pt; line-height: 1.6; color: #333; margin-top: 2px; }
+            .sheet .foot { margin-top: 18px; font-size: 9pt; color: #666; border-top: 1px solid #999; padding-top: 6px; }
+        }
+        @page { margin: 18mm 15mm; }
+
         @media (max-width: 600px) {
             header h1 { font-size: 1.5rem; }
             .story-card { padding: 16px; }
+            .export-group { margin-left: 0; }
             .speed-control { margin-left: 0; width: 100%; }
             body { padding: 12px 12px 210px 12px; }
         }
@@ -141,6 +183,17 @@
         </header>
 
         <div id="voiceStatus" class="voice-status">正在載入語音引擎... 請稍候</div>
+
+        <div class="toolbar">
+            <div class="seg" role="group" aria-label="顯示模式">
+                <button id="modeEn" class="seg-btn active" onclick="setViewMode('en')">純英文</button>
+                <button id="modeBi" class="seg-btn" onclick="setViewMode('bi')">中英對照</button>
+            </div>
+            <div class="export-group">
+                <button class="btn btn-secondary btn-sm" onclick="exportPDF('en')">匯出純英文朗讀稿 PDF</button>
+                <button class="btn btn-secondary btn-sm" onclick="exportPDF('bi')">匯出中英對照朗讀稿 PDF</button>
+            </div>
+        </div>
 
         <nav class="tabs" id="tabs" aria-label="學生分頁"></nav>
 
@@ -158,7 +211,7 @@
                 <span id="playerTitle">尚未播放</span>
                 <span id="playerCount">第 0 / 0 句</span>
             </div>
-            <div class="player-progress" id="playerProgress" title="播放進度">
+            <div class="player-progress" title="播放進度">
                 <div class="player-progress-fill" id="playerProgressFill"></div>
             </div>
             <div class="player-controls">
@@ -175,91 +228,152 @@
         </div>
     </div>
 
+    <!-- 列印用稿件區 -->
+    <div class="print-area" id="printArea"></div>
+
     <script>
+        // 每位學生的稿件：逐句中英對照（朗讀只唸英文）
         const students = [
             {
                 id: '60124',
                 name: '何禹潼',
                 gender: 'female',
                 title: 'The Sound of Silence',
-                story: `In the Kingdom of Chords, mistakes made noise. Whenever someone did something wrong, a sharp, broken musical note would loop around them forever. Kiran lived with the loudest noise in the kingdom. A deafening screech of broken strings followed his every step. It came from a past betrayal that ruined his best friendship. The noise was constant, and he was exhausted.
-Kiran climbed the Whispering Ravine, searching for quiet.
-First: A Weaver offered him thick earmuffs. "Block the sound," she said. Kiran refused. "Muffling the noise does not stop it from playing."
-Second: A Musician offered to play loud, happy music over it. "Drown it out," he said. Kiran shook his head. "Adding more noise only makes more chaos."
-Third: A Critic offered to analyze the sound wave. "Understand it, and it won't hurt," he said. Kiran declined. "Analyzing the noise does not bring peace."
-Kiran reached the very top of the ravine. The air here was dead silent, making his inner noise feel ten times louder. His head throbbed. He stopped fighting. He uncovered his ears, closed his eyes, and finally just listened to the terrible sound. He accepted the pain of what he had done, and whispered: "I built this screeching cage with my own choices... but I'm finally brave enough to stop running and set us free."
-Instantly, the screeching notes changed. They softened into a gentle harmony, then faded into total silence. Kiran opened his eyes to a quiet world. He realized the loudest noises are not the mistakes we make, but the excuses we use to run away from them.`
+                lines: [
+                    { en: `In the Kingdom of Chords, mistakes made noise.`, zh: `在和弦王國裡，犯錯是會發出聲響的。` },
+                    { en: `Whenever someone did something wrong, a sharp, broken musical note would loop around them forever.`, zh: `每當有人做錯事，一個尖銳破碎的音符就會永遠纏繞著他。` },
+                    { en: `Kiran lived with the loudest noise in the kingdom.`, zh: `奇蘭背負著全王國最響亮的噪音。` },
+                    { en: `A deafening screech of broken strings followed his every step.`, zh: `震耳欲聾的斷弦尖嘯，如影隨形地跟著他的每一步。` },
+                    { en: `It came from a past betrayal that ruined his best friendship.`, zh: `那是因為過去的一次背叛，毀掉了他最好的友誼。` },
+                    { en: `The noise was constant, and he was exhausted.`, zh: `噪音從未停歇，他已心力交瘁。` },
+                    { en: `Kiran climbed the Whispering Ravine, searching for quiet.`, zh: `奇蘭攀爬低語深谷，尋找安靜。` },
+                    { en: `First: A Weaver offered him thick earmuffs. "Block the sound," she said.`, zh: `首先，一位織布工送他一副厚耳罩。「把聲音擋掉吧，」她說。` },
+                    { en: `Kiran refused. "Muffling the noise does not stop it from playing."`, zh: `奇蘭拒絕了。「悶住噪音，並不能讓它停止播放。」` },
+                    { en: `Second: A Musician offered to play loud, happy music over it. "Drown it out," he said.`, zh: `接著，一位音樂家提議用響亮歡快的音樂蓋過它。「把它淹沒掉，」他說。` },
+                    { en: `Kiran shook his head. "Adding more noise only makes more chaos."`, zh: `奇蘭搖搖頭。「增加更多噪音，只會製造更多混亂。」` },
+                    { en: `Third: A Critic offered to analyze the sound wave. "Understand it, and it won't hurt," he said.`, zh: `第三位，一位評論家提議分析這道音波。「理解它，它就不會傷到你，」他說。` },
+                    { en: `Kiran declined. "Analyzing the noise does not bring peace."`, zh: `奇蘭婉拒了。「分析噪音，並不能帶來平靜。」` },
+                    { en: `Kiran reached the very top of the ravine.`, zh: `奇蘭登上了深谷的最頂端。` },
+                    { en: `The air here was dead silent, making his inner noise feel ten times louder.`, zh: `這裡的空氣一片死寂，讓他內心的噪音感覺大了十倍。` },
+                    { en: `His head throbbed. He stopped fighting.`, zh: `他的頭隱隱作痛。他不再抵抗了。` },
+                    { en: `He uncovered his ears, closed his eyes, and finally just listened to the terrible sound.`, zh: `他拿下遮住耳朵的手，閉上眼睛，終於靜靜聆聽那可怕的聲音。` },
+                    { en: `He accepted the pain of what he had done, and whispered: "I built this screeching cage with my own choices... but I'm finally brave enough to stop running and set us free."`, zh: `他接受了自己所作所為帶來的痛，輕聲說：「這座尖嘯的牢籠是我自己的選擇造成的……但我終於有勇氣不再逃跑，讓我們都自由。」` },
+                    { en: `Instantly, the screeching notes changed.`, zh: `就在那一瞬間，尖嘯的音符改變了。` },
+                    { en: `They softened into a gentle harmony, then faded into total silence.`, zh: `它們漸漸化為柔和的和聲，然後消散成一片寂靜。` },
+                    { en: `Kiran opened his eyes to a quiet world.`, zh: `奇蘭睜開眼睛，世界一片安靜。` },
+                    { en: `He realized the loudest noises are not the mistakes we make, but the excuses we use to run away from them.`, zh: `他明白了：最響亮的噪音不是我們犯的錯，而是我們用來逃避的藉口。` }
+                ]
             },
             {
                 id: '60120',
                 name: '蔡亞璇',
                 gender: 'female',
                 title: 'The Boy and the Apple Tree',
-                story: `Once upon a time, a little boy loved a big apple tree.
-Every day, he played under the tree, climbed its branches, and ate sweet apples.
-The tree loved the boy, and they were very happy.
-As time went by, the boy grew up and stopped visiting.
-One day, he returned looking sad. "I want toys, but I have no money," he said.
-The tree smiled and said, "Take my apples and sell them in town."
-The boy picked all the apples and ran away happily.
-Many years passed. The boy did not return, and the tree felt very lonely.`
+                lines: [
+                    { en: `Once upon a time, a little boy loved a big apple tree.`, zh: `從前從前，有一個小男孩深愛著一棵大蘋果樹。` },
+                    { en: `Every day, he played under the tree, climbed its branches, and ate sweet apples.`, zh: `每天，他都在樹下玩耍，爬上樹枝，吃著香甜的蘋果。` },
+                    { en: `The tree loved the boy, and they were very happy.`, zh: `大樹愛著小男孩，他們非常快樂。` },
+                    { en: `As time went by, the boy grew up and stopped visiting.`, zh: `時光流逝，小男孩長大了，不再來探望大樹。` },
+                    { en: `One day, he returned looking sad.`, zh: `有一天，他帶著難過的表情回來了。` },
+                    { en: `"I want toys, but I have no money," he said.`, zh: `「我想要玩具，可是我沒有錢，」他說。` },
+                    { en: `The tree smiled and said, "Take my apples and sell them in town."`, zh: `大樹微笑著說：「把我的蘋果帶去鎮上賣掉吧。」` },
+                    { en: `The boy picked all the apples and ran away happily.`, zh: `小男孩摘下所有的蘋果，開開心心地跑走了。` },
+                    { en: `Many years passed.`, zh: `許多年過去了。` },
+                    { en: `The boy did not return, and the tree felt very lonely.`, zh: `小男孩沒有再回來，大樹感到非常孤單。` }
+                ]
             },
             {
                 id: '60122',
                 name: '陳柏舜',
                 gender: 'male',
                 title: 'Leo and the Time Radio',
-                story: `Leo found the radio at the back of his grandfather's dusty garage. It wasn't anything sleek or modern; it was a bulky, wooden box with a glowing amber dial and brass knobs that felt heavy and cold to the touch. He only plugged it in to see if the ancient tubes still worked. They did, humming to life with a soft, warm light, but the speaker only offered a steady wall of static.
-He turned the largest knob, listening to the hiss and crackle, until suddenly, a voice cut through the noise. It wasn't a local DJ or a familiar news anchor. The voice sounded incredibly clear, speaking in a calm, almost mechanical rhythm.
-"Attention citizens of Sector Four. Tomorrow's solar transit will cause minor disruptions to all aerial tram schedules. Please plan for a ten-minute delay. Also, remember to calibrate your UV-reflective gear; the atmospheric glare will be particularly intense this week."
-Leo froze, his hand hovering over the dial. Aerial trams? Sector Four? He carefully twisted the knob a fraction of an inch, hoping to catch more, but the station vanished, swallowed instantly back into the white noise.
-Over the next few weeks, Leo became completely absorbed by the device. He spent every afternoon in the sweltering garage, meticulously adjusting the brass dials. He quickly learned that the radio didn't tune into different geographical stations; it tuned into different eras. On a rainy Tuesday, he heard a broadcast from what sounded like a deep-sea colony, the announcer complaining about saltwater corrosion on the exterior domes. On Thursday, he caught a snippet of a music countdown featuring synthesized instruments he couldn't even imagine, played by bands broadcasting from the late 22nd century.
-He tried to record the voices on his phone, desperate for proof, but whenever he played the audio back, the recordings held nothing but regular, unbroken static. The anomaly, it seemed, existed strictly between his own ears and the strange wooden box.
-Eventually, Leo stopped trying to capture the audio or prove it to his friends. It became his own private window into the unknown, a quiet assurance that no matter how stressful his upcoming exams or daily teenage struggles felt, humanity was still out there in the distant future. They were still riding transit, complaining about the weather, and listening to the radio. The world was going to keep spinning, and for a teenager trying to figure out his own small place in it, that was exactly what he needed to hear.`
+                lines: [
+                    { en: `Leo found the radio at the back of his grandfather's dusty garage.`, zh: `李歐在他爺爺佈滿灰塵的車庫深處發現了一台收音機。` },
+                    { en: `It wasn't anything sleek or modern; it was a bulky, wooden box with a glowing amber dial and brass knobs that felt heavy and cold to the touch.`, zh: `它一點也不流線現代，而是一個笨重的木盒子，有著發出琥珀色光芒的刻度盤，和摸起來又重又冰涼的黃銅旋鈕。` },
+                    { en: `He only plugged it in to see if the ancient tubes still worked.`, zh: `他插上插頭，只是想看看古老的真空管還能不能用。` },
+                    { en: `They did, humming to life with a soft, warm light, but the speaker only offered a steady wall of static.`, zh: `真空管竟然亮了，發出柔和溫暖的光和嗡嗡聲，但喇叭只傳出持續不斷的雜音。` },
+                    { en: `He turned the largest knob, listening to the hiss and crackle, until suddenly, a voice cut through the noise.`, zh: `他轉動最大的旋鈕，聽著嘶嘶雜音，直到突然有個聲音切入噪音之中。` },
+                    { en: `It wasn't a local DJ or a familiar news anchor.`, zh: `那不是本地電台主持人，也不是熟悉的主播。` },
+                    { en: `The voice sounded incredibly clear, speaking in a calm, almost mechanical rhythm.`, zh: `那聲音異常清晰，用平靜近乎機械的節奏說話。` },
+                    { en: `"Attention citizens of Sector Four. Tomorrow's solar transit will cause minor disruptions to all aerial tram schedules. Please plan for a ten-minute delay.`, zh: `「第四區市民請注意。明天的太陽凌日將造成空中纜車班次小幅延誤，請預留十分鐘。` },
+                    { en: `Also, remember to calibrate your UV-reflective gear; the atmospheric glare will be particularly intense this week."`, zh: `另外，請記得校準你們的抗紫外線裝備，本週的大氣眩光會特別強烈。」` },
+                    { en: `Leo froze, his hand hovering over the dial.`, zh: `李歐僵住了，手懸在刻度盤上。` },
+                    { en: `Aerial trams? Sector Four?`, zh: `空中纜車？第四區？` },
+                    { en: `He carefully twisted the knob a fraction of an inch, hoping to catch more, but the station vanished, swallowed instantly back into the white noise.`, zh: `他小心翼翼地把旋鈕轉動一點點，想再多聽一點，但那個電台消失了，瞬間被雜音吞沒。` },
+                    { en: `Over the next few weeks, Leo became completely absorbed by the device.`, zh: `接下來的幾個星期，李歐完全沉迷於這台機器。` },
+                    { en: `He spent every afternoon in the sweltering garage, meticulously adjusting the brass dials.`, zh: `每天下午，他都待在悶熱的車庫裡，仔細調整黃銅旋鈕。` },
+                    { en: `He quickly learned that the radio didn't tune into different geographical stations; it tuned into different eras.`, zh: `他很快發現，這台收音機調的不是不同地區的電台，而是不同的時代。` },
+                    { en: `On a rainy Tuesday, he heard a broadcast from what sounded like a deep-sea colony, the announcer complaining about saltwater corrosion on the exterior domes.`, zh: `在一個下雨的星期二，他聽到疑似來自深海殖民地的廣播，主播抱怨外部穹頂的鹽水腐蝕。` },
+                    { en: `On Thursday, he caught a snippet of a music countdown featuring synthesized instruments he couldn't even imagine, played by bands broadcasting from the late 22nd century.`, zh: `星期四，他捕捉到一段音樂排行榜，使用的合成樂器超乎他的想像，是二十二世紀末的樂團播放的。` },
+                    { en: `He tried to record the voices on his phone, desperate for proof, but whenever he played the audio back, the recordings held nothing but regular, unbroken static.`, zh: `他急著想證明這一切，試著用手機錄音，但每次回放都只有一般不間斷的雜音。` },
+                    { en: `The anomaly, it seemed, existed strictly between his own ears and the strange wooden box.`, zh: `看來，這個異常現象只存在於他的耳朵和那個奇怪木盒之間。` },
+                    { en: `Eventually, Leo stopped trying to capture the audio or prove it to his friends.`, zh: `最後，李歐不再試圖錄音，也不再想向朋友證明。` },
+                    { en: `It became his own private window into the unknown, a quiet assurance that no matter how stressful his upcoming exams or daily teenage struggles felt, humanity was still out there in the distant future.`, zh: `它成了他通往未知的私人窗口，靜靜地告訴他：無論考試和青春期的煩惱多麼讓人焦慮，人類在遙遠的未來依然存在。` },
+                    { en: `They were still riding transit, complaining about the weather, and listening to the radio.`, zh: `他們還在搭交通工具、抱怨天氣、聽收音機。` },
+                    { en: `The world was going to keep spinning, and for a teenager trying to figure out his own small place in it, that was exactly what he needed to hear.`, zh: `世界會繼續轉動，而對一個努力尋找自己位置的少年來說，這正是他最需要聽到的。` }
+                ]
             },
             {
                 id: '60115',
                 name: '林云晴',
                 gender: 'female',
                 title: 'The Magic Seed',
-                story: `Ben was a young boy who lived near a giant, ancient forest. Unlike his brothers, who loved building wooden swords and running wild, Ben loved watching plants grow. He spent every afternoon in his small garden, caring for his flowers.
-One rainy afternoon, an old traveler stopped by Ben's house. "Thank you for the warm tea, young boy," the traveler said, reaching into his pocket. "Take this golden seed. If you care for it with patience, it will show you something magical."
-Ben planted the tiny seed in a small clay pot. Every morning, he gave it clear water and placed it in the brightest sunlight. Days passed, but nothing grew. His brothers laughed and said, "It is just an empty shell, Ben! Give up!"
-However, Ben did not lose hope. He remembered the traveler's words about patience. On the seventh morning, a tiny green shoot popped out of the soil. Day by day, it grew taller, until a glowing, silver flower bloomed!
-The flower filled the air with a sweet scent and brought colorful butterflies from all over the forest. Ben's brothers watched in complete wonder.
-Ben smiled and said, "Great things take time to grow. All we need is a little patience."`
+                lines: [
+                    { en: `Ben was a young boy who lived near a giant, ancient forest.`, zh: `小班是個小男孩，住在一座巨大古老的森林附近。` },
+                    { en: `Unlike his brothers, who loved building wooden swords and running wild, Ben loved watching plants grow.`, zh: `和喜歡做木劍、四處瘋跑的哥哥們不同，小班喜歡看植物生長。` },
+                    { en: `He spent every afternoon in his small garden, caring for his flowers.`, zh: `每天下午，他都在小花園裡照顧他的花。` },
+                    { en: `One rainy afternoon, an old traveler stopped by Ben's house.`, zh: `在一個下雨的午後，一位老旅人來到小班家門口。` },
+                    { en: `"Thank you for the warm tea, young boy," the traveler said, reaching into his pocket.`, zh: `「謝謝你的熱茶，小朋友，」旅人說著，把手伸進口袋。` },
+                    { en: `"Take this golden seed. If you care for it with patience, it will show you something magical."`, zh: `「收下這顆金色的種子。用耐心照顧它，它會讓你看到神奇的事。」` },
+                    { en: `Ben planted the tiny seed in a small clay pot.`, zh: `小班把小小的種子種進小陶盆。` },
+                    { en: `Every morning, he gave it clear water and placed it in the brightest sunlight.`, zh: `每天早晨，他給它澆清水，放在陽光最充足的地方。` },
+                    { en: `Days passed, but nothing grew.`, zh: `日子一天天過去，卻什麼也沒長出來。` },
+                    { en: `His brothers laughed and said, "It is just an empty shell, Ben! Give up!"`, zh: `哥哥們笑他：「那只是空殼啦，小班！放棄吧！」` },
+                    { en: `However, Ben did not lose hope.`, zh: `可是，小班沒有放棄希望。` },
+                    { en: `He remembered the traveler's words about patience.`, zh: `他記得旅人說過關於耐心的話。` },
+                    { en: `On the seventh morning, a tiny green shoot popped out of the soil.`, zh: `第七天早晨，一株小綠芽從土裡冒出來。` },
+                    { en: `Day by day, it grew taller, until a glowing, silver flower bloomed!`, zh: `一天比一天高，最後開出一朵發光的銀色花朵！` },
+                    { en: `The flower filled the air with a sweet scent and brought colorful butterflies from all over the forest.`, zh: `花香瀰漫在空氣中，引來森林各處五彩繽紛的蝴蝶。` },
+                    { en: `Ben's brothers watched in complete wonder.`, zh: `哥哥們看得目瞪口呆。` },
+                    { en: `Ben smiled and said, "Great things take time to grow. All we need is a little patience."`, zh: `小班微笑著說：「美好的事物需要時間成長。我們需要的，只是一點耐心。」` }
+                ]
             },
             {
                 id: '60126',
                 name: '吳丹楓',
                 gender: 'female',
                 title: 'The Bowl of Soup',
-                story: `One evening, Xiao-An went to her Japanese friend's house for dinner. It was her first time having dinner with a Japanese family, so she was very excited and curious about their culture.
-When she arrived, her friend's grandmother welcomed her warmly. The dining table was filled with delicious food. Before dinner began, Xiao-An noticed a bowl of hot soup on a small table near the window. It smelled wonderful, and she thought it was prepared for the guests.
-Without thinking, she picked it up and took a sip.
-"Wow! This soup is delicious. Thank you!" she said.
-Her friend suddenly looked surprised.
-"You drank that soup?"
-Xiao-An looked confused. "Yes. Isn't it for us?"
-Her friend explained, "Actually, no. It is an offering for our ancestors. We place food there to remember our family members who have passed away."
-Xiao-An immediately put down the bowl.
-"Oh, I'm really sorry. I didn't know."
-She felt embarrassed, but her friend's grandmother simply smiled.
-"Don't worry," she said. "You didn't know our customs. Every culture has different traditions."
-She then made a new bowl of soup for Xiao-An.
-"This one is for you."
-Xiao-An felt grateful and thanked her.
-During dinner, the two girls talked about their families. Xiao-An discovered that her own family also prepares food for their ancestors during special holidays.
-She realized that something ordinary in one culture can have a completely different meaning in another. Instead of thinking that something is strange, we should learn about it and respect it.
-Although their traditions were different, both families shared the same love for their ancestors.
-Xiao-An smiled and thought, "Maybe different cultures are not so different after all."
-Different traditions can teach us about each other, and understanding can bring people closer together.`
+                lines: [
+                    { en: `One evening, Xiao-An went to her Japanese friend's house for dinner.`, zh: `一天晚上，小安去日本朋友家吃晚餐。` },
+                    { en: `It was her first time having dinner with a Japanese family, so she was very excited and curious about their culture.`, zh: `那是她第一次和日本家庭共進晚餐，所以她既興奮又好奇。` },
+                    { en: `When she arrived, her friend's grandmother welcomed her warmly.`, zh: `抵達時，朋友的奶奶熱情地迎接她。` },
+                    { en: `The dining table was filled with delicious food.`, zh: `餐桌上擺滿了美味的食物。` },
+                    { en: `Before dinner began, Xiao-An noticed a bowl of hot soup on a small table near the window.`, zh: `晚餐開始前，小安注意到窗邊小桌上有一碗熱湯。` },
+                    { en: `It smelled wonderful, and she thought it was prepared for the guests.`, zh: `湯聞起來很香，她以為是為客人準備的。` },
+                    { en: `Without thinking, she picked it up and took a sip.`, zh: `沒多想，她端起來喝了一口。` },
+                    { en: `"Wow! This soup is delicious. Thank you!" she said.`, zh: `「哇！這湯好好喝，謝謝！」她說。` },
+                    { en: `Her friend suddenly looked surprised.`, zh: `朋友突然露出驚訝的表情。` },
+                    { en: `"You drank that soup?"`, zh: `「你把那碗湯喝了？」` },
+                    { en: `Xiao-An looked confused. "Yes. Isn't it for us?"`, zh: `小安一臉困惑。「對啊，不是給我們喝的嗎？」` },
+                    { en: `Her friend explained, "Actually, no. It is an offering for our ancestors. We place food there to remember our family members who have passed away."`, zh: `朋友解釋：「其實不是。那是供奉祖先的。我們放食物在那裡，是為了紀念過世的家人。」` },
+                    { en: `Xiao-An immediately put down the bowl.`, zh: `小安立刻放下碗。` },
+                    { en: `"Oh, I'm really sorry. I didn't know."`, zh: `「啊，我真的很抱歉，我不知道。」` },
+                    { en: `She felt embarrassed, but her friend's grandmother simply smiled.`, zh: `她覺得很不好意思，但朋友的奶奶只是微笑。` },
+                    { en: `"Don't worry," she said. "You didn't know our customs. Every culture has different traditions."`, zh: `「沒關係，」她說，「你不了解我們的習俗。每個文化都有不同的傳統。」` },
+                    { en: `She then made a new bowl of soup for Xiao-An.`, zh: `接著，她為小安重新盛了一碗湯。` },
+                    { en: `"This one is for you."`, zh: `「這一碗是給你的。」` },
+                    { en: `Xiao-An felt grateful and thanked her.`, zh: `小安心懷感激，向她道謝。` },
+                    { en: `During dinner, the two girls talked about their families.`, zh: `晚餐時，兩個女孩聊起各自的家庭。` },
+                    { en: `Xiao-An discovered that her own family also prepares food for their ancestors during special holidays.`, zh: `小安發現，自己的家人在特別的節日也會準備食物祭拜祖先。` },
+                    { en: `She realized that something ordinary in one culture can have a completely different meaning in another.`, zh: `她明白了，在一種文化中平常的事物，在另一種文化中可能有完全不同的意義。` },
+                    { en: `Instead of thinking that something is strange, we should learn about it and respect it.`, zh: `與其覺得奇怪，我們更應該去了解並尊重它。` },
+                    { en: `Although their traditions were different, both families shared the same love for their ancestors.`, zh: `雖然傳統不同，但兩個家庭對祖先都懷著同樣的愛。` },
+                    { en: `Xiao-An smiled and thought, "Maybe different cultures are not so different after all."`, zh: `小安微笑著想：「也許，不同的文化並沒有那麼不同。」` },
+                    { en: `Different traditions can teach us about each other, and understanding can bring people closer together.`, zh: `不同的傳統能讓我們彼此學習，而理解能讓人與人更靠近。` }
+                ]
             }
         ];
 
-        function splitSentences(text) {
-            return text.split(/(?<=[.!?])\s+(?=[A-Z"])|\n\s*\n/).filter(s => s.trim().length > 0);
-        }
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
@@ -388,6 +502,7 @@ Different traditions can teach us about each other, and understanding can bring 
         const tts = new TTSManager();
         let activeStudentId = students[0].id;
         let activeSentences = [];
+        let viewMode = 'en'; // 'en' 純英文，'bi' 中英對照
 
         const tabsEl = document.getElementById('tabs');
         const storyWrap = document.getElementById('storyWrap');
@@ -400,6 +515,8 @@ Different traditions can teach us about each other, and understanding can bring 
         const playerProgressFill = document.getElementById('playerProgressFill');
         const speedRange = document.getElementById('speedRange');
         const speedVal = document.getElementById('speedVal');
+        const modeEnBtn = document.getElementById('modeEn');
+        const modeBiBtn = document.getElementById('modeBi');
 
         function activeStudent() {
             return students.find(s => s.id === activeStudentId);
@@ -414,16 +531,19 @@ Different traditions can teach us about each other, and understanding can bring 
 
         function renderActiveStory() {
             const student = activeStudent();
-            activeSentences = splitSentences(student.story);
-            const sentenceHtml = activeSentences.map((s, i) =>
-                `<span class="sentence" data-index="${i}" onclick="playFromSentence(${i})">${escapeHtml(s)}</span>`
+            activeSentences = student.lines.map(l => l.en);
+            const sentenceHtml = student.lines.map((l, i) =>
+                `<span class="sentence" data-index="${i}" onclick="playFromSentence(${i})">` +
+                `<span class="en">${escapeHtml(l.en)}</span>` +
+                (viewMode === 'bi' ? `<span class="zh">${escapeHtml(l.zh)}</span>` : '') +
+                `</span>`
             ).join(' ');
             storyWrap.innerHTML =
                 `<article class="story-card" id="story-${student.id}">` +
                     `<div class="story-header">` +
                         `<div class="student-avatar ${student.gender}">${escapeHtml(student.name.charAt(0))}</div>` +
                         `<div class="student-info"><h3>${escapeHtml(student.name)} (${escapeHtml(student.id)})</h3>` +
-                        `<span>${student.gender === 'female' ? '女生 · 女聲' : '男生 · 男聲'} · 共 ${activeSentences.length} 句</span></div>` +
+                        `<span>${student.gender === 'female' ? '女生 · 女聲' : '男生 · 男聲'} · 共 ${student.lines.length} 句</span></div>` +
                     `</div>` +
                     `<h2 class="story-title">${escapeHtml(student.title)}</h2>` +
                     `<p class="hint">提示：點任一句可從該句開始朗讀；播放中會自動捲到目前句子。</p>` +
@@ -438,6 +558,26 @@ Different traditions can teach us about each other, and understanding can bring 
             activeStudentId = studentId;
             renderTabs();
             renderActiveStory();
+        }
+
+        function setViewMode(mode) {
+            if (mode === viewMode) return;
+            viewMode = mode;
+            modeEnBtn.classList.toggle('active', mode === 'en');
+            modeBiBtn.classList.toggle('active', mode === 'bi');
+            const wasPlaying = tts.isPlaying;
+            const idx = tts.currentSentenceIndex;
+            renderActiveStory();
+            if (wasPlaying) {
+                // 句序不變，直接恢復亮點與進度，不中斷朗讀
+                tts.onSentenceChange = updateSentenceUI;
+                tts.onEnd = onPlayEnd;
+                updateSentenceUI(Math.min(idx, activeSentences.length - 1), 'playing');
+                setPlayerState(true);
+                const s = activeStudent();
+                playerTitle.innerHTML = `正在播放：<strong>${escapeHtml(s.name)}《${escapeHtml(s.title)}》</strong>`;
+                if (tts.isPaused) btnPause.textContent = '▶ 繼續';
+            }
         }
 
         function startPlay(fromIndex) {
@@ -495,6 +635,25 @@ Different traditions can teach us about each other, and understanding can bring 
             const total = els.length || 1;
             playerProgressFill.style.width = Math.min(((index + done) / total) * 100, 100) + '%';
             playerCount.textContent = `第 ${Math.min(index + 1, total)} / ${total} 句`;
+        }
+
+        // 匯出目前分頁學生的朗讀稿 PDF（經由瀏覽器列印 → 另存為 PDF）
+        function exportPDF(kind) {
+            const s = activeStudent();
+            const items = s.lines.map(l =>
+                `<li><p class="p-en">${escapeHtml(l.en)}</p>` +
+                (kind === 'bi' ? `<p class="p-zh">${escapeHtml(l.zh)}</p>` : '') +
+                `</li>`
+            ).join('');
+            const kindLabel = kind === 'bi' ? '中英對照朗讀稿' : '純英文朗讀稿';
+            document.getElementById('printArea').innerHTML =
+                `<div class="sheet">` +
+                    `<h1>說故事比賽${kindLabel}</h1>` +
+                    `<p class="meta">姓名：${escapeHtml(s.name)}（${escapeHtml(s.id)}）｜篇名：${escapeHtml(s.title)}｜共 ${s.lines.length} 句</p>` +
+                    `<ol class="script">${items}</ol>` +
+                    `<p class="foot">Storytelling Competition · ${escapeHtml(s.name)}《${escapeHtml(s.title)}》${kindLabel}</p>` +
+                `</div>`;
+            window.print();
         }
 
         btnPlay.onclick = () => startPlay(0);
