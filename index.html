@@ -150,6 +150,11 @@
         .rec-diag b { color: #4facfe; }
         .rec-try-btn { margin-top: 10px; padding: 10px 20px; background: linear-gradient(135deg, #4facfe 0%, #00c6ff 100%); color: white; border: none; border-radius: 10px; font-size: 0.95rem; font-weight: 600; cursor: pointer; }
         .rec-try-btn:hover { box-shadow: 0 4px 12px rgba(79,172,254,0.4); }
+        .mic-select { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; color: #5d6d7e; }
+        .mic-select select {
+            padding: 6px 10px; border: 2px solid #e4e8eb; border-radius: 8px;
+            font-size: 0.85rem; color: #2c3e50; background: #f8f9fa; max-width: 260px;
+        }
 
         /* 底部常駐播放列 */
         .player-bar {
@@ -240,6 +245,14 @@
             <div class="export-group">
                 <button class="btn btn-secondary btn-sm" onclick="exportPDF('en')">匯出純英文朗讀稿 PDF</button>
                 <button class="btn btn-secondary btn-sm" onclick="exportPDF('bi')">匯出中英對照朗讀稿 PDF</button>
+            </div>
+        </div>
+        <div class="toolbar">
+            <div class="mic-select">
+                <span>🎤 錄音裝置：</span>
+                <select id="micSelect" onchange="onMicChange(this.value)">
+                    <option value="">偵測中…</option>
+                </select>
             </div>
         </div>
 
@@ -692,10 +705,36 @@
 
         // ---------- 錄音跟讀 ＋ 電腦評分 ----------
         const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-        let rec = { active: false, pending: false, index: -1, sid: 0, recognition: null, stream: null, audioCtx: null, analyser: null, meterTimer: null, mediaRecorder: null, chunks: [], finalText: '', timer: null, audioUrl: null, diag: [] };
+        let rec = { active: false, pending: false, index: -1, sid: 0, recognition: null, stream: null, audioCtx: null, analyser: null, meterTimer: null, mediaRecorder: null, chunks: [], finalText: '', timer: null, audioUrl: null, diag: [], selectedDeviceId: '' };
 
         function recSupported() {
             return !!SR && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+        }
+
+        // ---- 麥克風裝置列舉與選擇 ----
+        async function initMicList() {
+            const sel = document.getElementById('micSelect');
+            if (!sel) return;
+            try {
+                // 先取得一次權限才能列出裝置名稱
+                const tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
+                tmp.getTracks().forEach(t => t.stop());
+                const devs = await navigator.mediaDevices.enumerateDevices();
+                const mics = devs.filter(d => d.kind === 'audioinput');
+                sel.innerHTML = mics.map((d, i) => {
+                    const label = d.label || ('麥克風 ' + (i + 1));
+                    const selected = i === 0 && !rec.selectedDeviceId ? 'selected' : (d.deviceId === rec.selectedDeviceId ? 'selected' : '');
+                    return `<option value="${d.deviceId}" ${selected}>${escapeHtml(label)}</option>`;
+                }).join('');
+                if (mics.length > 0 && !rec.selectedDeviceId) {
+                    rec.selectedDeviceId = mics[0].deviceId;
+                }
+            } catch (e) {
+                sel.innerHTML = `<option value="">無法取得麥克風清單</option>`;
+            }
+        }
+        function onMicChange(deviceId) {
+            rec.selectedDeviceId = deviceId;
         }
 
         function recBtn(index) { return document.getElementById('rec-btn-' + index); }
@@ -742,7 +781,10 @@
             logDiag('正在請求麥克風權限...');
             let stream;
             try {
-                stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+                const constraints = rec.selectedDeviceId
+                    ? { audio: { deviceId: { exact: rec.selectedDeviceId }, echoCancellation: true, noiseSuppression: true, autoGainControl: true } }
+                    : { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } };
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
                 logDiag('麥克風取得成功');
             // 檢查音訊軌道是否真的啟用
             const audioTracks = stream.getAudioTracks();
@@ -974,6 +1016,7 @@
             try { rec.stream && rec.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
             rec.recognition = null; rec.mediaRecorder = null; rec.stream = null;
             setRecBtnIdle(index, '再錄一次');
+            initMicList(); // 重新整理裝置清單
             const fb = recFb(index);
             if (!fb) return;
             fb.hidden = false;
@@ -1098,6 +1141,7 @@
             renderTabs();
             renderActiveStory();
             setTimeout(() => tts.loadVoices(), 500);
+            initMicList();
         });
     </script>
 </body>
