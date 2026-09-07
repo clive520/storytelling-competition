@@ -139,6 +139,17 @@
         .rec-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         .rec-actions audio { height: 32px; max-width: 220px; }
         .rec-tip { font-size: 0.82rem; color: #95a5a6; margin-top: 6px; }
+        .rec-meter { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+        .rec-meter-bar { flex: 1; height: 8px; background: #eef1f4; border-radius: 4px; overflow: hidden; }
+        .rec-meter-fill { height: 100%; width: 0%; background: #4facfe; border-radius: 4px; transition: width 0.1s; }
+        .rec-meter-fill.high { background: #e74c3c; }
+        .rec-meter-fill.mid { background: #f39c12; }
+        .rec-meter-fill.low { background: #27ae60; }
+        .rec-meter-label { font-size: 0.8rem; color: #7f8c8d; min-width: 60px; }
+        .rec-diag { margin-top: 8px; padding: 10px; background: #f0f7ff; border-radius: 8px; font-size: 0.82rem; color: #2c3e50; line-height: 1.6; }
+        .rec-diag b { color: #4facfe; }
+        .rec-try-btn { margin-top: 10px; padding: 10px 20px; background: linear-gradient(135deg, #4facfe 0%, #00c6ff 100%); color: white; border: none; border-radius: 10px; font-size: 0.95rem; font-weight: 600; cursor: pointer; }
+        .rec-try-btn:hover { box-shadow: 0 4px 12px rgba(79,172,254,0.4); }
 
         /* 底部常駐播放列 */
         .player-bar {
@@ -681,14 +692,16 @@
 
         // ---------- 錄音跟讀 ＋ 電腦評分 ----------
         const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-        let rec = { active: false, pending: false, index: -1, sid: 0, recognition: null, stream: null, mediaRecorder: null, chunks: [], finalText: '', timer: null, audioUrl: null };
+        let rec = { active: false, pending: false, index: -1, sid: 0, recognition: null, stream: null, audioCtx: null, analyser: null, meterTimer: null, mediaRecorder: null, chunks: [], finalText: '', timer: null, audioUrl: null, diag: [] };
 
         function recSupported() {
-            return !!SR && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && !!window.MediaRecorder;
+            return !!SR && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
         }
 
         function recBtn(index) { return document.getElementById('rec-btn-' + index); }
         function recFb(index) { return document.getElementById('rec-fb-' + index); }
+        function recMeter(index) { return document.getElementById('rec-meter-' + index); }
+        function recMeterFill(index) { return document.getElementById('rec-meter-fill-' + index); }
 
         function setRecBtnIdle(index, label) {
             const b = recBtn(index);
@@ -705,29 +718,38 @@
             fb.innerHTML = `<div class="rec-heard">${escapeHtml(msg)}</div>`;
         }
 
+        function logDiag(msg) { rec.diag.push(msg); }
+
         function toggleRecord(index) {
-            if (rec.pending) return; // 辨識中，請稍候
+            if (rec.pending) return;
             if (rec.active && rec.index === index) { finishRecording(); return; }
             startRecording(index);
         }
 
         async function startRecording(index) {
+            rec.diag = [];
             if (!recSupported()) {
-                showRecMsg(index, '此瀏覽器不支援錄音辨識，請改用電腦版 Chrome 或 Edge，並允許使用麥克風。');
+                showRecMsg(index, '此瀏覽器不支援語音辨識，請改用電腦版 Chrome 或 Edge。');
                 return;
             }
             stopRecording(true);
-            tts.stop(true); // 避免範讀聲音被一起收進去
+            tts.stop(true);
             const b = recBtn(index);
             const fb = recFb(index);
             if (rec.audioUrl) { URL.revokeObjectURL(rec.audioUrl); rec.audioUrl = null; }
+
+            // Step 1: 取得麥克風
+            logDiag('正在請求麥克風權限...');
             let stream;
             try {
-                stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+                logDiag('麥克風取得成功');
             } catch (e) {
-                showRecMsg(index, '無法使用麥克風（可能被拒絕或沒有麥克風），請檢查瀏覽器權限後再試一次。');
+                logDiag('麥克風失敗: ' + e.message);
+                showRecMsg(index, buildDiag('無法使用麥克風（可能被拒絕或沒有麥克風），請檢查瀏覽器權限後再試一次。'));
                 return;
             }
+
             const sid = ++rec.sid;
             rec.active = true;
             rec.pending = false;
@@ -735,80 +757,166 @@
             rec.stream = stream;
             rec.chunks = [];
             rec.finalText = '';
+
             if (b) { b.disabled = false; b.classList.add('recording'); b.textContent = '停止錄音'; }
-            if (fb) { fb.hidden = false; fb.innerHTML = `<div class="rec-heard">聆聽中… 請唸出上面的英文句子，唸完按「停止錄音」。</div>`; }
-            // 同時錄音（供回放）與語音辨識（供評分）
-            try {
-                const mr = new MediaRecorder(stream);
-                rec.mediaRecorder = mr;
-                mr.ondataavailable = (e) => { if (e.data && e.data.size > 0) rec.chunks.push(e.data); };
-                mr.onstop = () => {
-                    if (rec.chunks.length === 0) return;
-                    try {
-                        if (rec.audioUrl) URL.revokeObjectURL(rec.audioUrl);
-                        rec.audioUrl = URL.createObjectURL(new Blob(rec.chunks, { type: mr.mimeType || 'audio/webm' }));
-                        const a = document.getElementById('rec-audio-' + index);
-                        if (a) { a.src = rec.audioUrl; a.hidden = false; }
-                    } catch (e) { /* 忽略回放錯誤 */ }
-                };
-                mr.start();
-            } catch (e) { rec.mediaRecorder = null; }
+            if (fb) { fb.hidden = false; fb.innerHTML = `<div class="rec-heard">聆聽中… 請唸出上面的英文句子，唸完按「停止錄音」。</div>` + meterHtml(index); }
+            startMeter(index, stream);
+
+            // Step 2: 開始語音辨識（SpeechRecognition 用自己的麥克風，不與 MediaRecorder 衝突）
             const r = new SR();
             rec.recognition = r;
             r.lang = 'en-US';
             r.interimResults = true;
             r.maxAlternatives = 1;
-            r.continuous = false;
+            r.continuous = true;
+            logDiag('啟動語音辨識...');
             r.onresult = (e) => {
                 if (sid !== rec.sid) return;
                 let interim = '';
                 for (let i = e.resultIndex; i < e.results.length; i++) {
                     const tr = e.results[i][0].transcript;
-                    if (e.results[i].isFinal) rec.finalText += tr + ' ';
-                    else interim += tr;
+                    if (e.results[i].isFinal) {
+                        rec.finalText += tr + ' ';
+                        logDiag('辨識到(終): ' + tr);
+                    } else {
+                        interim += tr;
+                    }
                 }
                 const f = recFb(index);
                 if (f && rec.active) {
                     const show = (rec.finalText + interim).trim();
-                    f.innerHTML = `<div class="rec-heard">聆聽中…${show ? '「' + escapeHtml(show) + '」' : '請開始唸。'}</div>`;
+                    f.innerHTML = `<div class="rec-heard">聆聽中…${show ? '「' + escapeHtml(show) + '」' : '請開始唸。'}</div>` + meterHtml(index);
+                    startMeter(index, rec.stream);
                 }
             };
             r.onerror = (e) => {
                 if (sid !== rec.sid) return;
+                logDiag('辨識錯誤: ' + e.error);
                 if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-                    finalizeRecording(sid, true, '無法使用語音辨識（麥克風權限或網路問題），請確認已允許麥克風並保持連線後再試。');
+                    finalizeRecording(sid, true, '麥克風權限被拒絕，請在瀏覽器設定中允許此網站使用麥克風。');
                 }
-                // no-speech / aborted 等由 onend 統一收尾
+                // no-speech / audio-capture / network 等由 onend 統一收尾
             };
             r.onend = () => {
+                logDiag('辨識結束, finalText=' + JSON.stringify(rec.finalText));
                 if (sid !== rec.sid || (!rec.active && !rec.pending)) return;
                 finalizeRecording(sid, false);
             };
-            try { r.start(); } catch (e) {
-                finalizeRecording(sid, true, '語音辨識啟動失敗，請改用電腦版 Chrome 或 Edge 再試一次。');
+            try {
+                r.start();
+                logDiag('語音辨識已啟動');
+            } catch (e) {
+                logDiag('語音辨識啟動失敗: ' + e.message);
+                finalizeRecording(sid, true, '語音辨識啟動失敗（' + e.message + '），請改用電腦版 Chrome 或 Edge 再試一次。');
                 return;
             }
+
+            // Step 3: 同時用 MediaRecorder 錄音（供回放），不影響 SpeechRecognition
+            if (window.MediaRecorder) {
+                try {
+                    const mr = new MediaRecorder(stream);
+                    rec.mediaRecorder = mr;
+                    mr.ondataavailable = (e) => { if (e.data && e.data.size > 0) rec.chunks.push(e.data); };
+                    mr.onstop = () => {
+                        if (rec.chunks.length === 0) return;
+                        try {
+                            if (rec.audioUrl) URL.revokeObjectURL(rec.audioUrl);
+                            rec.audioUrl = URL.createObjectURL(new Blob(rec.chunks, { type: mr.mimeType || 'audio/webm' }));
+                            const a = document.getElementById('rec-audio-' + index);
+                            if (a) { a.src = rec.audioUrl; a.hidden = false; }
+                        } catch (e) { /* 忽略 */ }
+                    };
+                    mr.start();
+                    logDiag('MediaRecorder 啟動');
+                } catch (e) { rec.mediaRecorder = null; logDiag('MediaRecorder 失敗: ' + e.message); }
+            }
+
             rec.timer = setTimeout(() => { if (rec.active && rec.index === index) finishRecording(); }, 30000);
+        }
+
+        function meterHtml(index) {
+            return `<div class="rec-meter" id="rec-meter-${index}">` +
+                `<div class="rec-meter-bar"><div class="rec-meter-fill" id="rec-meter-fill-${index}"></div></div>` +
+                `<div class="rec-meter-label" id="rec-meter-label-${index}">音量</div></div>`;
+        }
+
+        function startMeter(index, stream) {
+            stopMeter();
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioCtx.createMediaStreamSource(stream);
+                const analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 256;
+                source.connect(analyser);
+                rec.audioCtx = audioCtx;
+                rec.analyser = analyser;
+                const data = new Uint8Array(analyser.frequencyBinCount);
+                rec.meterTimer = setInterval(() => {
+                    analyser.getByteFrequencyData(data);
+                    let sum = 0;
+                    for (let i = 0; i < data.length; i++) sum += data[i];
+                    const avg = sum / data.length;
+                    const pct = Math.min(avg / 128 * 100, 100);
+                    const fill = recMeterFill(index);
+                    const label = recMeterLabel(index);
+                    if (fill) {
+                        fill.style.width = pct + '%';
+                        fill.className = 'rec-meter-fill' + (pct > 60 ? ' high' : pct > 25 ? ' mid' : pct > 2 ? ' low' : '');
+                    }
+                    if (label) {
+                        label.textContent = pct < 2 ? '無聲音' : pct < 25 ? '小聲' : pct < 60 ? '正常' : '大聲';
+                    }
+                }, 100);
+            } catch (e) { logDiag('音量條失敗: ' + e.message); }
+        }
+
+        function recMeterLabel(index) { return document.getElementById('rec-meter-label-' + index); }
+
+        function stopMeter() {
+            if (rec.meterTimer) { clearInterval(rec.meterTimer); rec.meterTimer = null; }
+            if (rec.audioCtx) { try { rec.audioCtx.close(); } catch(e) {} rec.audioCtx = null; }
+            rec.analyser = null;
+        }
+
+        function buildDiag(extraMsg) {
+            const isSR = !!SR;
+            const isChrome = /Chrome/i.test(navigator.userAgent) && !/Edg/i.test(navigator.userAgent);
+            const isEdge = /Edg/i.test(navigator.userAgent);
+            const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+            let browser = isChrome ? 'Chrome' : isEdge ? 'Edge' : isSafari ? 'Safari' : '其他';
+            let info = `<div class="rec-diag">` +
+                `<b>診斷資訊</b><br>` +
+                `瀏覽器：${browser}<br>` +
+                `SpeechRecognition 支援：${isSR ? '✅ 是' : '❌ 否'}<br>` +
+                `MediaRecorder 支援：${!!window.MediaRecorder ? '✅ 是' : '❌ 否'}<br>`;
+            if (!isSR) {
+                info += `<br>⚠️ 你的瀏覽器不支援語音辨識 API。<br>` +
+                    `iOS / iPadOS 的 Safari 不支援此功能，請改用 <b>電腦版 Chrome 或 Edge</b>。<br>` +
+                    `Android 請用 Chrome 瀏覽器。`;
+            } else if (isSafari) {
+                info += `<br>⚠️ Safari 對語音辨識的支援不穩定，建議改用 <b>Chrome 或 Edge</b>。`;
+            }
+            info += `<br><br>${escapeHtml(extraMsg)}</div>`;
+            return info;
         }
 
         function finishRecording() {
             if (!rec.active || rec.pending) return;
             const sid = rec.sid, index = rec.index;
-            // 立刻關麥克風、切換按鈕，讓使用者馬上看到「已停止」
             rec.active = false;
             rec.pending = true;
             if (rec.timer) { clearTimeout(rec.timer); rec.timer = null; }
-            try { rec.stream && rec.stream.getTracks().forEach(t => t.stop()); } catch (e) { /* 忽略 */ }
-            try { rec.mediaRecorder && rec.mediaRecorder.state !== 'inactive' && rec.mediaRecorder.stop(); } catch (e) { /* 忽略 */ }
+            stopMeter();
+            // 立刻關麥克風
+            try { rec.stream && rec.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+            try { rec.mediaRecorder && rec.mediaRecorder.state !== 'inactive' && rec.mediaRecorder.stop(); } catch (e) {}
             const b = recBtn(index), fb = recFb(index);
             if (b) { b.disabled = true; b.classList.remove('recording'); b.textContent = '辨識中…'; }
             if (fb) { fb.hidden = false; fb.innerHTML = `<div class="rec-heard">已停止錄音，電腦辨識中…</div>`; }
-            // 保險絲：若瀏覽器的 onend 沒回來（網路慢或異常），3 秒後強制用已收到的文字結算
-            setTimeout(() => {
-                if (sid === rec.sid && rec.pending) finalizeRecording(sid, false);
-            }, 3000);
+            // 保險絲：3 秒後強制結算
+            setTimeout(() => { if (sid === rec.sid && rec.pending) finalizeRecording(sid, false); }, 3000);
             try { rec.recognition && rec.recognition.stop(); } catch (e) {
-                finalizeRecording(sid, false); // stop() 直接報錯就地收尾
+                finalizeRecording(sid, false);
             }
         }
 
@@ -818,10 +926,11 @@
             rec.active = false;
             rec.pending = false;
             if (rec.timer) { clearTimeout(rec.timer); rec.timer = null; }
+            stopMeter();
             const idx = rec.index;
-            try { rec.recognition && rec.recognition.abort(); } catch (e) { /* 忽略 */ }
-            try { rec.mediaRecorder && rec.mediaRecorder.state !== 'inactive' && rec.mediaRecorder.stop(); } catch (e) { /* 忽略 */ }
-            try { rec.stream && rec.stream.getTracks().forEach(t => t.stop()); } catch (e) { /* 忽略 */ }
+            try { rec.recognition && rec.recognition.abort(); } catch (e) {}
+            try { rec.mediaRecorder && rec.mediaRecorder.state !== 'inactive' && rec.mediaRecorder.stop(); } catch (e) {}
+            try { rec.stream && rec.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
             rec.recognition = null; rec.mediaRecorder = null; rec.stream = null;
             setRecBtnIdle(idx);
             if (!silent) { const fb = recFb(idx); if (fb) fb.hidden = true; }
@@ -832,24 +941,28 @@
             rec.active = false;
             rec.pending = false;
             if (rec.timer) { clearTimeout(rec.timer); rec.timer = null; }
+            stopMeter();
             const index = rec.index;
             const target = activeStudent().lines[index].en;
             const heard = (rec.finalText || '').trim();
-            try { rec.recognition && rec.recognition.abort(); } catch (e) { /* 忽略 */ }
-            try { rec.mediaRecorder && rec.mediaRecorder.state !== 'inactive' && rec.mediaRecorder.stop(); } catch (e) { /* 忽略 */ }
-            try { rec.stream && rec.stream.getTracks().forEach(t => t.stop()); } catch (e) { /* 忽略 */ }
+            try { rec.recognition && rec.recognition.abort(); } catch (e) {}
+            try { rec.mediaRecorder && rec.mediaRecorder.state !== 'inactive' && rec.mediaRecorder.stop(); } catch (e) {}
+            try { rec.stream && rec.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
             rec.recognition = null; rec.mediaRecorder = null; rec.stream = null;
             setRecBtnIdle(index, '再錄一次');
             const fb = recFb(index);
             if (!fb) return;
             fb.hidden = false;
             if (failed) {
-                fb.innerHTML = `<div class="rec-heard">${escapeHtml(failMsg || '辨識失敗，請再試一次。')}</div>`;
+                fb.innerHTML = `<div class="rec-heard">${failMsg || '辨識失敗，請再試一次。'}</div>` +
+                    `<div class="rec-diag"><b>診斷紀錄</b><br>${rec.diag.map(d => escapeHtml(d)).join('<br>')}</div>`;
                 return;
             }
             if (!heard) {
                 fb.innerHTML = `<div class="rec-score low">沒有聽到聲音</div>` +
-                    `<div class="rec-heard">請靠近麥克風，大聲清楚地唸一次，再按「再錄一次」重試。也可以先按句子聽一次範讀。</div>`;
+                    `<div class="rec-heard">請靠近麥克風，大聲清楚地唸一次，再按「再錄一次」重試。也可以先按句子聽一次範讀。</div>` +
+                    `<div class="rec-diag"><b>診斷紀錄（用來排除問題）</b><br>${rec.diag.map(d => escapeHtml(d)).join('<br>')}</div>` +
+                    `<div style="margin-top:10px"><button class="rec-try-btn" onclick="event.stopPropagation(); toggleRecord(${index})">再錄一次</button></div>`;
                 return;
             }
             const result = scorePronunciation(target, heard);
@@ -873,7 +986,6 @@
                     `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); playFromSentence(${index})">播放原音</button>` +
                 `</div>` +
                 `<div class="rec-tip">綠色＝電腦有聽到，紅色＝可能沒唸清楚或漏掉。辨識僅供參考，環境太吵會影響分數。</div>`;
-            // 錄音檔若已先產生（比回饋卡早），在這裡接上；否則由 onstop 回來時接上
             const aud = document.getElementById('rec-audio-' + index);
             if (aud && rec.audioUrl) { aud.src = rec.audioUrl; aud.hidden = false; }
         }
